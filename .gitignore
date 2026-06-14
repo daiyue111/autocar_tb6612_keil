@@ -1,0 +1,29 @@
+# Keil build outputs
+Objects/
+Listings/
+*.axf
+*.hex
+*.map
+*.lst
+*.o
+*.d
+*.crf
+*.lnp
+*.htm
+*.dep
+
+# Keil user/session files
+*.uvguix.*
+*.uvgui.*
+*.uvoptx.bak
+
+# Local backups made during bring-up
+*.bak_motor_test
+
+# Logs
+build.log
+keil/build.log
+
+# OS/editor noise
+Thumbs.db
+.DS_Store
