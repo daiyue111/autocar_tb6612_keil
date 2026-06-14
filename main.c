@@ -1,19 +1,19 @@
 #include "ti_msp_dl_config.h"
 
-#define TRACK_BLACK_IS_HIGH 1U
+#define TRACK_BLACK_IS_HIGH 0U
 
-#define STRAIGHT_LEFT_DUTY 56U
-#define STRAIGHT_RIGHT_DUTY 50U
+#define STRAIGHT_LEFT_DUTY 53U
+#define STRAIGHT_RIGHT_DUTY 60U
 #define START_IGNORE_MS 1200U
-#define STOP_CENTER_MASK 0x3CU
-#define STOP_MIN_CENTER_COUNT 4U
-#define STOP_CONFIRM_MS 80U
-#define BRAKE_DUTY 80U
-#define BRAKE_TIME_MS 120U
-#define DIAG_PULSE_DUTY 60U
-#define DIAG_PULSE_MS 120U
+#define STOP_CENTER_MASK 0xFFU
+#define STOP_MIN_CENTER_COUNT 1U
+#define STOP_CONFIRM_MS 1U
+#define BRAKE_MS 80U
+#define BEEP_HALF_PERIOD_CYCLES (CPUCLK_FREQ / 3000U)
 
 #define PWM_PERIOD_TICKS 200U
+
+
 #define PWM_STEP_DELAY_CYCLES (CPUCLK_FREQ / 200000U)
 
 static void delay_ms(uint32_t ms)
@@ -41,6 +41,7 @@ static bool key_pressed(void)
 {
     return !gpio_read(KEY_START_PORT, KEY_START_PIN);
 }
+
 
 static void wait_start_key(void)
 {
@@ -77,6 +78,23 @@ static void motors_safe_stop(void)
     gpio_write(MOTOR_DIN2_PORT, MOTOR_DIN2_PIN, false);
 }
 
+static void notice_arrived(void)
+{
+    for (uint32_t i = 0; i < 180U; i++) {
+        gpio_write(BEEP_PORT, BEEP_PIN, true);
+        delay_cycles(BEEP_HALF_PERIOD_CYCLES);
+        gpio_write(BEEP_PORT, BEEP_PIN, false);
+        delay_cycles(BEEP_HALF_PERIOD_CYCLES);
+    }
+
+    for (uint8_t i = 0; i < 3U; i++) {
+        gpio_write(LED_PORT, LED_PIN, true);
+        delay_ms(180U);
+        gpio_write(LED_PORT, LED_PIN, false);
+        delay_ms(180U);
+    }
+}
+
 static void motors_forward_dir(void)
 {
     gpio_write(MOTOR_AIN1_PORT, MOTOR_AIN1_PIN, true);
@@ -99,6 +117,22 @@ static void motors_backward_dir(void)
     gpio_write(MOTOR_CIN2_PORT, MOTOR_CIN2_PIN, false);
     gpio_write(MOTOR_DIN1_PORT, MOTOR_DIN1_PIN, true);
     gpio_write(MOTOR_DIN2_PORT, MOTOR_DIN2_PIN, false);
+}
+
+static void motors_brake(void)
+{
+    gpio_write(MOTOR_AIN1_PORT, MOTOR_AIN1_PIN, true);
+    gpio_write(MOTOR_AIN2_PORT, MOTOR_AIN2_PIN, true);
+    gpio_write(MOTOR_BIN1_PORT, MOTOR_BIN1_PIN, true);
+    gpio_write(MOTOR_BIN2_PORT, MOTOR_BIN2_PIN, true);
+    gpio_write(MOTOR_CIN1_PORT, MOTOR_CIN1_PIN, true);
+    gpio_write(MOTOR_CIN2_PORT, MOTOR_CIN2_PIN, true);
+    gpio_write(MOTOR_DIN1_PORT, MOTOR_DIN1_PIN, true);
+    gpio_write(MOTOR_DIN2_PORT, MOTOR_DIN2_PIN, true);
+    gpio_write(MOTOR_PWMA_PORT, MOTOR_PWMA_PIN, true);
+    gpio_write(MOTOR_PWMB_PORT, MOTOR_PWMB_PIN, true);
+    gpio_write(MOTOR_PWMC_PORT, MOTOR_PWMC_PIN, true);
+    gpio_write(MOTOR_PWMD_PORT, MOTOR_PWMD_PIN, true);
 }
 
 static void pwm_run_1ms(uint8_t leftDuty, uint8_t rightDuty)
@@ -170,62 +204,14 @@ static bool b_line_detected(void)
     return bit_count(centerMask) >= STOP_MIN_CENTER_COUNT;
 }
 
-static void motor_a_forward(void)
-{
-    gpio_write(MOTOR_AIN1_PORT, MOTOR_AIN1_PIN, true);
-    gpio_write(MOTOR_AIN2_PORT, MOTOR_AIN2_PIN, false);
-}
-
-static void pulse_a(uint32_t ms)
-{
-    motor_a_forward();
-
-    for (uint32_t i = 0; i < ms; i++) {
-        for (uint32_t tick = 0; tick < PWM_PERIOD_TICKS; tick++) {
-            gpio_write(MOTOR_PWMA_PORT, MOTOR_PWMA_PIN,
-                tick < DIAG_PULSE_DUTY);
-            delay_cycles(PWM_STEP_DELAY_CYCLES);
-        }
-    }
-
-    motors_safe_stop();
-}
-
-static void report_stop_mask(uint8_t stopMask)
-{
-    uint8_t centerCount = bit_count(stopMask & STOP_CENTER_MASK);
-
-    delay_ms(800U);
-
-    if (centerCount == 0U) {
-        delay_ms(1200U);
-        return;
-    }
-
-    for (uint8_t i = 0; i < centerCount; i++) {
-        pulse_a(DIAG_PULSE_MS);
-        delay_ms(350U);
-    }
-}
-
-static void active_brake(void)
-{
-    motors_backward_dir();
-
-    for (uint32_t i = 0; i < BRAKE_TIME_MS; i++) {
-        pwm_run_1ms(BRAKE_DUTY, BRAKE_DUTY);
-    }
-
-    motors_safe_stop();
-}
-
 int main(void)
 {
     uint32_t stopConfirmMs = 0;
-    uint8_t stopMask = 0;
 
     SYSCFG_DL_init();
     gpio_write(MOTOR_STBY_PORT, MOTOR_STBY_PIN, true);
+    gpio_write(LED_PORT, LED_PIN, false);
+    gpio_write(BEEP_PORT, BEEP_PIN, false);
     motors_safe_stop();
 
     wait_start_key();
@@ -238,7 +224,6 @@ int main(void)
         if ((t > START_IGNORE_MS) &&
             (bit_count(centerMask) >= STOP_MIN_CENTER_COUNT)) {
             stopConfirmMs++;
-            stopMask = currentMask;
         } else {
             stopConfirmMs = 0U;
         }
@@ -250,8 +235,10 @@ int main(void)
         pwm_run_1ms(STRAIGHT_LEFT_DUTY, STRAIGHT_RIGHT_DUTY);
     }
 
-    active_brake();
-    report_stop_mask(stopMask);
+    motors_brake();
+    delay_ms(BRAKE_MS);
+    motors_safe_stop();
+    notice_arrived();
 
     while (1) {
         motors_safe_stop();

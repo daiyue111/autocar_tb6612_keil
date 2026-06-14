@@ -105,6 +105,14 @@ extern "C" {
 #define KEY_START_PIN  DL_GPIO_PIN_18
 #define KEY_START_IOMUX IOMUX_PINCM40
 
+#define LED_PORT GPIOB
+#define LED_PIN  DL_GPIO_PIN_18
+#define LED_IOMUX IOMUX_PINCM44
+
+#define BEEP_PORT GPIOA
+#define BEEP_PIN  DL_GPIO_PIN_21
+#define BEEP_IOMUX IOMUX_PINCM46
+
 void SYSCFG_DL_init(void);
 
 #ifdef __cplusplus
