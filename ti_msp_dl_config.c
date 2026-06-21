@@ -27,6 +27,31 @@ static void init_key_pullup_pin(IOMUX_PINCM pin)
         DL_GPIO_WAKEUP_DISABLE);
 }
 
+static void init_imu_i2c(void)
+{
+    DL_I2C_ClockConfig clockConfig = {
+        .clockSel = DL_I2C_CLOCK_BUSCLK,
+        .divideRatio = DL_I2C_CLOCK_DIVIDE_1,
+    };
+
+    DL_GPIO_initPeripheralInputFunctionFeatures(IMU_SDA_IOMUX, IMU_SDA_FUNC,
+        DL_GPIO_INVERSION_DISABLE, DL_GPIO_RESISTOR_PULL_UP,
+        DL_GPIO_HYSTERESIS_ENABLE, DL_GPIO_WAKEUP_DISABLE);
+    DL_GPIO_initPeripheralInputFunctionFeatures(IMU_SCL_IOMUX, IMU_SCL_FUNC,
+        DL_GPIO_INVERSION_DISABLE, DL_GPIO_RESISTOR_PULL_UP,
+        DL_GPIO_HYSTERESIS_ENABLE, DL_GPIO_WAKEUP_DISABLE);
+
+    DL_I2C_reset(IMU_I2C);
+    DL_I2C_enablePower(IMU_I2C);
+    delay_cycles(16);
+
+    DL_I2C_setClockConfig(IMU_I2C, &clockConfig);
+    DL_I2C_setTimerPeriod(IMU_I2C, 31U);
+    DL_I2C_disableMultiControllerMode(IMU_I2C);
+    DL_I2C_enableControllerClockStretching(IMU_I2C);
+    DL_I2C_enableController(IMU_I2C);
+}
+
 void SYSCFG_DL_init(void)
 {
     DL_GPIO_reset(GPIOA);
@@ -62,6 +87,7 @@ void SYSCFG_DL_init(void)
     init_input_pullup_pin(TRACK_X7_IOMUX);
     init_input_pullup_pin(TRACK_X8_IOMUX);
     init_key_pullup_pin(KEY_START_IOMUX);
+    init_imu_i2c();
 
     DL_GPIO_clearPins(GPIOA, GPIOA_OUTPUT_PINS);
     DL_GPIO_clearPins(GPIOB, GPIOB_OUTPUT_PINS);
