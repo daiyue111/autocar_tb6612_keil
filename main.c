@@ -4,7 +4,7 @@
 
 #define IMU_TEST_MODE 0U
 
-#define TASK_MODE 4U
+#define TASK_MODE 123U
 
 #define STRAIGHT_LEFT_DUTY 53U
 #define STRAIGHT_RIGHT_DUTY 60U
@@ -1403,6 +1403,21 @@ static void run_task_4(void)
     }
 }
 
+static void run_tasks_1_to_3_by_key(void)
+{
+    wait_start_key();
+    run_task_1();
+    motors_safe_stop();
+
+    wait_start_key();
+    run_task_2();
+    motors_safe_stop();
+
+    wait_start_key();
+    run_task_3();
+    motors_safe_stop();
+}
+
 int main(void)
 {
     SYSCFG_DL_init();
@@ -1421,6 +1436,9 @@ int main(void)
 
     imu_init_for_route();
 
+#if TASK_MODE == 123U
+    run_tasks_1_to_3_by_key();
+#else
     wait_start_key();
 #if TASK_MODE == 4U
     run_task_4();
@@ -1430,6 +1448,7 @@ int main(void)
     run_task_2();
 #else
     run_task_1();
+#endif
 #endif
 
     while (1) {
