@@ -4,7 +4,7 @@
 
 #define IMU_TEST_MODE 0U
 
-#define TASK_MODE 3U
+#define TASK_MODE 4U
 
 #define STRAIGHT_LEFT_DUTY 53U
 #define STRAIGHT_RIGHT_DUTY 60U
@@ -44,6 +44,10 @@
 #define DA_ENTRY_RIGHT_DUTY 70U
 #define DA_ENTRY_TARGET_RAW 6000
 #define DA_ENTRY_MAX_MS 180U
+#define A_RESTART_LEFT_DUTY 72U
+#define A_RESTART_RIGHT_DUTY 72U
+#define A_RESTART_TARGET_RAW BD_ALIGN_TARGET_RAW
+#define A_RESTART_MAX_MS 260U
 #define DA_CENTER_MASK 0x18U
 #define DA_CENTER_MAX_MS 520U
 #define CD_STRAIGHT_LEFT_DUTY 54U
@@ -946,6 +950,30 @@ static void da_entry_align(void)
     }
 }
 
+static void a_turn_toward_c(void)
+{
+    int32_t turn = 0;
+
+    motors_spin_right_dir();
+
+    for (uint32_t t = 0; t < A_RESTART_MAX_MS; t++) {
+        int16_t gzRaw = 0;
+
+        if (imu_read_gyro_z(&gzRaw)) {
+            int32_t gz = (int32_t)gzRaw - gGyroZBias;
+
+            if ((gz > IMU_GYRO_DRIFT_DEAD_RAW) || (gz < -IMU_GYRO_DRIFT_DEAD_RAW)) {
+                turn += gz;
+            }
+            if (abs_i32(turn) >= A_RESTART_TARGET_RAW) {
+                break;
+            }
+        }
+
+        pwm_run_1ms(A_RESTART_LEFT_DUTY, A_RESTART_RIGHT_DUTY);
+    }
+}
+
 static void da_arc_follow_step(uint8_t mask, int16_t *lastError);
 static void da_acquire_follow_step(uint8_t mask, int16_t *lastError);
 
@@ -1336,7 +1364,7 @@ static void run_task_2(void)
     notice_arrived();
 }
 
-static void run_task_3(void)
+static void run_task_3_lap(bool finalLap)
 {
     run_ac_straight_to_line();
     notice_pass_point();
@@ -1352,7 +1380,27 @@ static void run_task_3(void)
     da_entry_arc_left();
     da_center_on_line();
     da_run_arc_until_lost();
-    notice_arrived();
+
+    if (finalLap) {
+        notice_arrived();
+    } else {
+        notice_pass_point();
+        delay_ms(60U);
+        a_turn_toward_c();
+        delay_ms(30U);
+    }
+}
+
+static void run_task_3(void)
+{
+    run_task_3_lap(true);
+}
+
+static void run_task_4(void)
+{
+    for (uint8_t lap = 0; lap < 4U; lap++) {
+        run_task_3_lap(lap == 3U);
+    }
 }
 
 int main(void)
@@ -1374,7 +1422,9 @@ int main(void)
     imu_init_for_route();
 
     wait_start_key();
-#if TASK_MODE == 3U
+#if TASK_MODE == 4U
+    run_task_4();
+#elif TASK_MODE == 3U
     run_task_3();
 #elif TASK_MODE == 2U
     run_task_2();
