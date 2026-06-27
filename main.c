@@ -4,7 +4,8 @@
 
 #define IMU_TEST_MODE 0U
 
-#define TASK_MODE 123U
+#define TASK_MODE 2U
+#define TASK2_STOP_AT_C_DEBUG 0U
 
 #define STRAIGHT_LEFT_DUTY 53U
 #define STRAIGHT_RIGHT_DUTY 60U
@@ -54,10 +55,16 @@
 #define CD_STRAIGHT_RIGHT_DUTY 60U
 #define CD_ALIGN_LEFT_DUTY 35U
 #define CD_ALIGN_RIGHT_DUTY 72U
-#define CD_ALIGN_MS 380U
+#define CD_ALIGN_MS 350U
+#define CD_CENTER_MASK 0x18U
+#define CD_CENTER_MAX_MS 260U
 #define LINE_BASE_LEFT_DUTY 32U
 #define LINE_BASE_RIGHT_DUTY 38U
 #define LINE_KP 7
+#define TASK2_ARC_BASE_LEFT_DUTY 26U
+#define TASK2_ARC_BASE_RIGHT_DUTY 44U
+#define TASK2_ARC_KP 7
+#define TASK2_ARC_LOST_CONFIRM_MS 160U
 #define START_IGNORE_MS 1200U
 #define LINE_DETECT_MASK 0xFFU
 #define LINE_DETECT_MIN_COUNT 1U
@@ -1029,20 +1036,33 @@ static void da_center_on_line(void)
     }
 }
 
+static void cd_center_on_line(void)
+{
+    motors_forward_dir();
+
+    for (uint32_t t = 0; t < CD_CENTER_MAX_MS; t++) {
+        uint8_t mask = track_read_mask();
+
+        if ((mask & CD_CENTER_MASK) != 0U) {
+            break;
+        }
+
+        if ((mask & 0xE0U) != 0U) {
+            pwm_run_1ms(12U, 72U);
+        } else if ((mask & 0x07U) != 0U) {
+            pwm_run_1ms(72U, 12U);
+        } else {
+            pwm_run_1ms(24U, 34U);
+        }
+    }
+}
+
 static void line_follow_step(uint8_t mask, int16_t *lastError)
 {
     uint8_t leftDuty;
     uint8_t rightDuty;
 
-    if ((mask & 0x03U) != 0U) {
-        *lastError = -7;
-        leftDuty = 76U;
-        rightDuty = 18U;
-    } else if ((mask & 0xC0U) != 0U) {
-        *lastError = 7;
-        leftDuty = 18U;
-        rightDuty = 76U;
-    } else if (mask != 0U) {
+    if (mask != 0U) {
         int16_t error = track_error(mask);
         int32_t correction = (int32_t)error * LINE_KP;
 
@@ -1050,14 +1070,40 @@ static void line_follow_step(uint8_t mask, int16_t *lastError)
         leftDuty = clamp_duty((int32_t)LINE_BASE_LEFT_DUTY - correction);
         rightDuty = clamp_duty((int32_t)LINE_BASE_RIGHT_DUTY + correction);
     } else if (*lastError < 0) {
-        leftDuty = 78U;
-        rightDuty = 14U;
+        leftDuty = 62U;
+        rightDuty = 32U;
     } else if (*lastError > 0) {
-        leftDuty = 14U;
-        rightDuty = 78U;
+        leftDuty = 28U;
+        rightDuty = 68U;
     } else {
         leftDuty = LINE_BASE_LEFT_DUTY;
         rightDuty = LINE_BASE_RIGHT_DUTY;
+    }
+
+    pwm_run_1ms(leftDuty, rightDuty);
+}
+
+static void task2_arc_follow_step(uint8_t mask, int16_t *lastError)
+{
+    uint8_t leftDuty;
+    uint8_t rightDuty;
+
+    if (mask != 0U) {
+        int16_t error = track_error(mask);
+        int32_t correction = (int32_t)error * TASK2_ARC_KP;
+
+        *lastError = error;
+        leftDuty = clamp_duty((int32_t)TASK2_ARC_BASE_LEFT_DUTY - correction);
+        rightDuty = clamp_duty((int32_t)TASK2_ARC_BASE_RIGHT_DUTY + correction);
+    } else if (*lastError < 0) {
+        leftDuty = 76U;
+        rightDuty = 8U;
+    } else if (*lastError > 0) {
+        leftDuty = 8U;
+        rightDuty = 82U;
+    } else {
+        leftDuty = TASK2_ARC_BASE_LEFT_DUTY;
+        rightDuty = TASK2_ARC_BASE_RIGHT_DUTY;
     }
 
     pwm_run_1ms(leftDuty, rightDuty);
@@ -1205,7 +1251,7 @@ static void settle_on_arc(void)
 
     for (uint32_t t = 0; t < ARC_SETTLE_MS; t++) {
         uint8_t mask = track_read_mask();
-        line_follow_step(mask, &lastError);
+        task2_arc_follow_step(mask, &lastError);
     }
 }
 
@@ -1226,11 +1272,11 @@ static void run_arc_until_lost(void)
             lostConfirmMs = 0U;
         }
 
-        if (lostConfirmMs >= ARC_LOST_CONFIRM_MS) {
+        if (lostConfirmMs >= TASK2_ARC_LOST_CONFIRM_MS) {
             break;
         }
 
-        line_follow_step(mask, &lastError);
+        task2_arc_follow_step(mask, &lastError);
     }
 
     active_brake_then_stop();
@@ -1355,8 +1401,12 @@ static void run_task_2(void)
     delay_ms(80U);
     run_arc_until_lost();
     notice_pass_point();
+#if TASK2_STOP_AT_C_DEBUG
+    return;
+#endif
     delay_ms(80U);
     cd_exit_align_right();
+    cd_center_on_line();
     run_cd_straight_to_line();
     notice_pass_point();
     delay_ms(30U);
