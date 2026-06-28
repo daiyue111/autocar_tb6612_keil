@@ -4,53 +4,11 @@
 
 #define IMU_TEST_MODE 0U
 
-#define TASK_MODE 12U
+#define TASK_MODE 3U
 #define TASK2_STOP_AT_C_DEBUG 0U
 
 #define STRAIGHT_LEFT_DUTY 53U
 #define STRAIGHT_RIGHT_DUTY 60U
-#define AC_STRAIGHT_LEFT_DUTY 53U
-#define AC_STRAIGHT_RIGHT_DUTY 60U
-#define BD_STRAIGHT_LEFT_DUTY 48U
-#define BD_STRAIGHT_RIGHT_DUTY 54U
-#define BD_ALIGN_LEFT_DUTY 80U
-#define BD_ALIGN_RIGHT_DUTY 80U
-#define BD_ALIGN_MS 700U
-#define BD_ALIGN_TARGET_RAW 6500
-#define BD_ALIGN_MAX_MS 170U
-#define CB_ENTRY_LEFT_DUTY 78U
-#define CB_ENTRY_RIGHT_DUTY 18U
-#define CB_ENTRY_MAX_MS 500U
-#define CB_ENTRY_MIN_MS 220U
-#define CB_ENTRY_MASK 0x3CU
-#define CB_ENTRY_CONFIRM_MS 40U
-#define CB_ARC_BASE_LEFT_DUTY 58U
-#define CB_ARC_BASE_RIGHT_DUTY 24U
-#define CB_ARC_KP 8
-#define CB_ARC_POINT_MIN_MS 1400U
-#define CB_ARC_POINT_CONFIRM_MS 25U
-#define CB_ARC_POINT_MIN_COUNT 5U
-#define CB_ARC_MAX_MS 6200U
-#define TASK3_LINE_BASE_LEFT_DUTY 24U
-#define TASK3_LINE_BASE_RIGHT_DUTY 30U
-#define TASK3_LINE_KP 10
-#define DA_ARC_BASE_LEFT_DUTY 22U
-#define DA_ARC_BASE_RIGHT_DUTY 43U
-#define DA_ARC_KP 4
-#define DA_ACQUIRE_MS 480U
-#define DA_ENTRY_ARC_LEFT_DUTY 8U
-#define DA_ENTRY_ARC_RIGHT_DUTY 60U
-#define DA_ENTRY_ARC_MS 285U
-#define DA_ENTRY_LEFT_DUTY 70U
-#define DA_ENTRY_RIGHT_DUTY 70U
-#define DA_ENTRY_TARGET_RAW 6000
-#define DA_ENTRY_MAX_MS 180U
-#define A_RESTART_LEFT_DUTY 72U
-#define A_RESTART_RIGHT_DUTY 72U
-#define A_RESTART_TARGET_RAW BD_ALIGN_TARGET_RAW
-#define A_RESTART_MAX_MS 260U
-#define DA_CENTER_MASK 0x18U
-#define DA_CENTER_MAX_MS 520U
 #define CD_STRAIGHT_LEFT_DUTY 54U
 #define CD_STRAIGHT_RIGHT_DUTY 60U
 #define CD_ALIGN_LEFT_DUTY 35U
@@ -65,6 +23,44 @@
 #define TASK2_ARC_BASE_RIGHT_DUTY 44U
 #define TASK2_ARC_KP 7
 #define TASK2_ARC_LOST_CONFIRM_MS 160U
+#define TASK3V2_GEOMETRY_DEG_X10 387
+#define TASK3V2_TURN_LEFT 0U
+#define TASK3V2_TURN_RIGHT 1U
+#define TASK3V2_TURN_DUTY 42U
+#define TASK3V2_TURN_MIN_MS 180U
+#define TASK3V2_SETTLE_MS 120U
+#define TASK3V2_POINT_DELAY_MS 80U
+#define TASK3V2_A_TO_AC_TURN_RAW 760
+#define TASK3V2_A_TO_AC_TURN_MAX_MS 900U
+#define TASK3V2_A_TO_AC_OPEN_TURN_MS 430U
+#define TASK3V2_C_TO_CB_OPEN_TURN_MS 360U
+#define TASK3V2_B_TO_BD_OPEN_TURN_MS 380U
+#define TASK3V2_D_TO_DA_OPEN_TURN_MS 360U
+#define TASK3V2_C_TO_CB_TURN_RAW 520
+#define TASK3V2_C_TO_CB_TURN_MAX_MS 900U
+#define TASK3V2_B_TO_BD_TURN_RAW 520
+#define TASK3V2_B_TO_BD_TURN_MAX_MS 900U
+#define TASK3V2_D_TO_DA_TURN_RAW 520
+#define TASK3V2_D_TO_DA_TURN_MAX_MS 900U
+#define TASK3V2_STRAIGHT_LEFT_DUTY 45U
+#define TASK3V2_STRAIGHT_RIGHT_DUTY 51U
+#define TASK3V2_C_FIND_IGNORE_MS 500U
+#define TASK3V2_D_FIND_IGNORE_MS 500U
+#define TASK3V2_FIND_MAX_MS 4200U
+#define TASK3V2_LINE_MASK 0xFFU
+#define TASK3V2_LINE_CONFIRM_MS 1U
+#define TASK3V2_CAPTURE_LEFT_DUTY 24U
+#define TASK3V2_CAPTURE_RIGHT_DUTY 28U
+#define TASK3V2_CAPTURE_MAX_MS 900U
+#define TASK3V2_CAPTURE_MASK 0x3CU
+#define TASK3V2_ARC_MIN_MS 800U
+#define TASK3V2_ARC_LOST_CONFIRM_MS 140U
+#define TASK3V2_CB_BASE_LEFT_DUTY 44U
+#define TASK3V2_CB_BASE_RIGHT_DUTY 20U
+#define TASK3V2_CB_KP 7
+#define TASK3V2_DA_BASE_LEFT_DUTY 18U
+#define TASK3V2_DA_BASE_RIGHT_DUTY 42U
+#define TASK3V2_DA_KP 7
 #define START_IGNORE_MS 1200U
 #define LINE_DETECT_MASK 0xFFU
 #define LINE_DETECT_MIN_COUNT 1U
@@ -863,176 +859,12 @@ static void run_cd_straight_to_line(void)
         CD_LINE_DETECT_MASK, CD_LINE_DETECT_MIN_COUNT, false);
 }
 
-static void run_ac_straight_to_line(void)
-{
-    run_heading_straight_to_line_with_duty(AC_STRAIGHT_LEFT_DUTY, AC_STRAIGHT_RIGHT_DUTY,
-        AC_LINE_DETECT_MASK, AC_LINE_DETECT_MIN_COUNT, false);
-}
-
-static void run_bd_straight_to_line(void)
-{
-    run_heading_straight_to_line_with_duty(BD_STRAIGHT_LEFT_DUTY, BD_STRAIGHT_RIGHT_DUTY,
-        BD_LINE_DETECT_MASK, BD_LINE_DETECT_MIN_COUNT, true);
-}
-
-static void bd_turn_toward_d(void)
-{
-    int32_t turn = 0;
-
-    motors_spin_left_dir();
-
-    for (uint32_t t = 0; t < BD_ALIGN_MAX_MS; t++) {
-        int16_t gzRaw = 0;
-
-        if (imu_read_gyro_z(&gzRaw)) {
-            int32_t gz = (int32_t)gzRaw - gGyroZBias;
-
-            if ((gz > IMU_GYRO_DRIFT_DEAD_RAW) || (gz < -IMU_GYRO_DRIFT_DEAD_RAW)) {
-                turn += gz;
-            }
-            if (abs_i32(turn) >= BD_ALIGN_TARGET_RAW) {
-                break;
-            }
-        } else if (t >= BD_ALIGN_MS) {
-            break;
-        }
-
-        pwm_run_1ms(BD_ALIGN_LEFT_DUTY, BD_ALIGN_RIGHT_DUTY);
-    }
-}
-
-static void cb_entry_capture_line(void)
-{
-    uint32_t confirmMs = 0;
-
-    motors_forward_dir();
-
-    for (uint32_t t = 0; t < CB_ENTRY_MAX_MS; t++) {
-        uint8_t mask = track_read_mask();
-
-        if (line_detected_with_mask(mask, CB_ENTRY_MASK, 1U)) {
-            confirmMs++;
-        } else {
-            confirmMs = 0U;
-        }
-
-        if ((t > CB_ENTRY_MIN_MS) && (confirmMs >= CB_ENTRY_CONFIRM_MS)) {
-            break;
-        }
-
-        pwm_run_1ms(CB_ENTRY_LEFT_DUTY, CB_ENTRY_RIGHT_DUTY);
-    }
-}
-
 static void cd_exit_align_right(void)
 {
     motors_forward_dir();
 
     for (uint32_t t = 0; t < CD_ALIGN_MS; t++) {
         pwm_run_1ms(CD_ALIGN_LEFT_DUTY, CD_ALIGN_RIGHT_DUTY);
-    }
-}
-
-static void da_entry_align(void)
-{
-    int32_t turn = 0;
-
-    motors_spin_right_dir();
-
-    for (uint32_t t = 0; t < DA_ENTRY_MAX_MS; t++) {
-        int16_t gzRaw = 0;
-
-        if (imu_read_gyro_z(&gzRaw)) {
-            int32_t gz = (int32_t)gzRaw - gGyroZBias;
-
-            if ((gz > IMU_GYRO_DRIFT_DEAD_RAW) || (gz < -IMU_GYRO_DRIFT_DEAD_RAW)) {
-                turn += gz;
-            }
-            if (abs_i32(turn) >= DA_ENTRY_TARGET_RAW) {
-                break;
-            }
-        }
-
-        pwm_run_1ms(DA_ENTRY_LEFT_DUTY, DA_ENTRY_RIGHT_DUTY);
-    }
-}
-
-static void a_turn_toward_c(void)
-{
-    int32_t turn = 0;
-
-    motors_spin_right_dir();
-
-    for (uint32_t t = 0; t < A_RESTART_MAX_MS; t++) {
-        int16_t gzRaw = 0;
-
-        if (imu_read_gyro_z(&gzRaw)) {
-            int32_t gz = (int32_t)gzRaw - gGyroZBias;
-
-            if ((gz > IMU_GYRO_DRIFT_DEAD_RAW) || (gz < -IMU_GYRO_DRIFT_DEAD_RAW)) {
-                turn += gz;
-            }
-            if (abs_i32(turn) >= A_RESTART_TARGET_RAW) {
-                break;
-            }
-        }
-
-        pwm_run_1ms(A_RESTART_LEFT_DUTY, A_RESTART_RIGHT_DUTY);
-    }
-}
-
-static void da_arc_follow_step(uint8_t mask, int16_t *lastError);
-static void da_acquire_follow_step(uint8_t mask, int16_t *lastError);
-
-static void da_entry_arc_left(void)
-{
-    uint32_t entryMs = 230U;
-    uint8_t leftDuty = DA_ENTRY_ARC_LEFT_DUTY;
-    uint8_t rightDuty = DA_ENTRY_ARC_RIGHT_DUTY;
-
-    if ((gLastLineHitMask & 0xC0U) != 0U) {
-        entryMs = DA_ENTRY_ARC_MS;
-        leftDuty = 6U;
-        rightDuty = 64U;
-    } else if ((gLastLineHitMask & 0x30U) != 0U) {
-        entryMs = 250U;
-        leftDuty = 8U;
-        rightDuty = 60U;
-    } else if ((gLastLineHitMask & 0x0CU) != 0U) {
-        entryMs = 190U;
-        leftDuty = 12U;
-        rightDuty = 50U;
-    } else if ((gLastLineHitMask & 0x03U) != 0U) {
-        entryMs = 140U;
-        leftDuty = 18U;
-        rightDuty = 42U;
-    }
-
-    motors_forward_dir();
-
-    for (uint32_t t = 0; t < entryMs; t++) {
-        pwm_run_1ms(leftDuty, rightDuty);
-    }
-}
-
-static void da_center_on_line(void)
-{
-    motors_forward_dir();
-
-    for (uint32_t t = 0; t < DA_CENTER_MAX_MS; t++) {
-        uint8_t mask = track_read_mask();
-
-        if ((mask & DA_CENTER_MASK) != 0U) {
-            break;
-        }
-
-        if ((mask & 0xE0U) != 0U) {
-            pwm_run_1ms(8U, 82U);
-        } else if ((mask & 0x07U) != 0U) {
-            pwm_run_1ms(82U, 8U);
-        } else {
-            pwm_run_1ms(24U, 34U);
-        }
     }
 }
 
@@ -1109,140 +941,6 @@ static void task2_arc_follow_step(uint8_t mask, int16_t *lastError)
     pwm_run_1ms(leftDuty, rightDuty);
 }
 
-static void task3_line_follow_step(uint8_t mask, int16_t *lastError)
-{
-    uint8_t leftDuty;
-    uint8_t rightDuty;
-
-    if ((mask & 0x03U) != 0U) {
-        *lastError = -7;
-        leftDuty = 88U;
-        rightDuty = 8U;
-    } else if ((mask & 0xC0U) != 0U) {
-        *lastError = 7;
-        leftDuty = 8U;
-        rightDuty = 88U;
-    } else if (mask != 0U) {
-        int16_t error = track_error(mask);
-        int32_t correction = (int32_t)error * TASK3_LINE_KP;
-
-        *lastError = error;
-        leftDuty = clamp_duty((int32_t)TASK3_LINE_BASE_LEFT_DUTY - correction);
-        rightDuty = clamp_duty((int32_t)TASK3_LINE_BASE_RIGHT_DUTY + correction);
-    } else if (*lastError < 0) {
-        leftDuty = 92U;
-        rightDuty = 6U;
-    } else if (*lastError > 0) {
-        leftDuty = 6U;
-        rightDuty = 92U;
-    } else {
-        leftDuty = TASK3_LINE_BASE_LEFT_DUTY;
-        rightDuty = TASK3_LINE_BASE_RIGHT_DUTY;
-    }
-
-    pwm_run_1ms(leftDuty, rightDuty);
-}
-
-static void da_arc_follow_step(uint8_t mask, int16_t *lastError)
-{
-    uint8_t leftDuty;
-    uint8_t rightDuty;
-
-    if ((mask & 0x03U) != 0U) {
-        *lastError = -7;
-        leftDuty = 58U;
-        rightDuty = 20U;
-    } else if ((mask & 0xC0U) != 0U) {
-        *lastError = 7;
-        leftDuty = 16U;
-        rightDuty = 70U;
-    } else if (mask != 0U) {
-        int16_t error = track_error(mask);
-        int32_t correction = (int32_t)error * DA_ARC_KP;
-
-        *lastError = error;
-        leftDuty = clamp_duty((int32_t)DA_ARC_BASE_LEFT_DUTY - correction);
-        rightDuty = clamp_duty((int32_t)DA_ARC_BASE_RIGHT_DUTY + correction);
-    } else if (*lastError < 0) {
-        leftDuty = 60U;
-        rightDuty = 20U;
-    } else if (*lastError > 0) {
-        leftDuty = 16U;
-        rightDuty = 72U;
-    } else {
-        leftDuty = DA_ARC_BASE_LEFT_DUTY;
-        rightDuty = DA_ARC_BASE_RIGHT_DUTY;
-    }
-
-    pwm_run_1ms(leftDuty, rightDuty);
-}
-
-static void da_acquire_follow_step(uint8_t mask, int16_t *lastError)
-{
-    uint8_t leftDuty;
-    uint8_t rightDuty;
-
-    if ((mask & 0x03U) != 0U) {
-        *lastError = -7;
-        leftDuty = 78U;
-        rightDuty = 12U;
-    } else if ((mask & 0xC0U) != 0U) {
-        *lastError = 7;
-        leftDuty = 8U;
-        rightDuty = 88U;
-    } else if (mask != 0U) {
-        int16_t error = track_error(mask);
-        int32_t correction = (int32_t)error * 9;
-
-        *lastError = error;
-        leftDuty = clamp_duty(18 - correction);
-        rightDuty = clamp_duty(42 + correction);
-    } else if (*lastError < 0) {
-        leftDuty = 82U;
-        rightDuty = 10U;
-    } else {
-        *lastError = 7;
-        leftDuty = 8U;
-        rightDuty = 90U;
-    }
-
-    pwm_run_1ms(leftDuty, rightDuty);
-}
-
-static void cb_arc_follow_step(uint8_t mask, int16_t *lastError)
-{
-    uint8_t leftDuty;
-    uint8_t rightDuty;
-
-    if ((mask & 0x03U) != 0U) {
-        *lastError = -7;
-        leftDuty = 96U;
-        rightDuty = 4U;
-    } else if ((mask & 0xC0U) != 0U) {
-        *lastError = 7;
-        leftDuty = 36U;
-        rightDuty = 52U;
-    } else if (mask != 0U) {
-        int16_t error = track_error(mask);
-        int32_t correction = (int32_t)error * CB_ARC_KP;
-
-        *lastError = error;
-        leftDuty = clamp_duty((int32_t)CB_ARC_BASE_LEFT_DUTY - correction);
-        rightDuty = clamp_duty((int32_t)CB_ARC_BASE_RIGHT_DUTY + correction);
-    } else if (*lastError < 0) {
-        leftDuty = 98U;
-        rightDuty = 3U;
-    } else if (*lastError > 0) {
-        leftDuty = 28U;
-        rightDuty = 58U;
-    } else {
-        leftDuty = CB_ARC_BASE_LEFT_DUTY;
-        rightDuty = CB_ARC_BASE_RIGHT_DUTY;
-    }
-
-    pwm_run_1ms(leftDuty, rightDuty);
-}
-
 static void settle_on_arc(void)
 {
     int16_t lastError = 0;
@@ -1282,112 +980,6 @@ static void run_arc_until_lost(void)
     active_brake_then_stop();
 }
 
-static void cb_run_arc_until_lost(void)
-{
-    uint32_t lostConfirmMs = 0;
-    uint32_t pointConfirmMs = 0;
-    int16_t lastError = -7;
-
-    motors_forward_dir();
-
-    for (uint32_t t = 0; ; t++) {
-        uint8_t mask = track_read_mask();
-        uint8_t blackCount = bit_count(mask);
-
-        if ((t > ARC_MIN_RUN_MS) && ((mask & ARC_LOST_MASK) == 0U)) {
-            lostConfirmMs++;
-        } else {
-            lostConfirmMs = 0U;
-        }
-
-        if ((t > CB_ARC_POINT_MIN_MS) && (blackCount >= CB_ARC_POINT_MIN_COUNT)) {
-            pointConfirmMs++;
-        } else {
-            pointConfirmMs = 0U;
-        }
-
-        if ((lostConfirmMs >= ARC_LOST_CONFIRM_MS) ||
-            (pointConfirmMs >= CB_ARC_POINT_CONFIRM_MS) ||
-            (t >= CB_ARC_MAX_MS)) {
-            break;
-        }
-
-        cb_arc_follow_step(mask, &lastError);
-    }
-
-    active_brake_then_stop();
-}
-
-static void task3_settle_on_arc(void)
-{
-    int16_t lastError = 0;
-
-    motors_forward_dir();
-
-    for (uint32_t t = 0; t < ARC_SETTLE_MS; t++) {
-        uint8_t mask = track_read_mask();
-        task3_line_follow_step(mask, &lastError);
-    }
-}
-
-static void task3_run_arc_until_lost(void)
-{
-    uint32_t lostConfirmMs = 0;
-    int16_t lastError = 0;
-
-    motors_forward_dir();
-    task3_settle_on_arc();
-
-    for (uint32_t t = 0; ; t++) {
-        uint8_t mask = track_read_mask();
-
-        if ((t > ARC_MIN_RUN_MS) && ((mask & ARC_LOST_MASK) == 0U)) {
-            lostConfirmMs++;
-        } else {
-            lostConfirmMs = 0U;
-        }
-
-        if (lostConfirmMs >= ARC_LOST_CONFIRM_MS) {
-            break;
-        }
-
-        task3_line_follow_step(mask, &lastError);
-    }
-
-    active_brake_then_stop();
-}
-
-static void da_run_arc_until_lost(void)
-{
-    uint32_t lostConfirmMs = 0;
-    int16_t lastError = 7;
-
-    motors_forward_dir();
-
-    for (uint32_t t = 0; t < DA_ACQUIRE_MS; t++) {
-        uint8_t mask = track_read_mask();
-        da_acquire_follow_step(mask, &lastError);
-    }
-
-    for (uint32_t t = 0; ; t++) {
-        uint8_t mask = track_read_mask();
-
-        if ((t > ARC_MIN_RUN_MS) && ((mask & ARC_LOST_MASK) == 0U)) {
-            lostConfirmMs++;
-        } else {
-            lostConfirmMs = 0U;
-        }
-
-        if (lostConfirmMs >= ARC_LOST_CONFIRM_MS) {
-            break;
-        }
-
-        da_arc_follow_step(mask, &lastError);
-    }
-
-    active_brake_then_stop();
-}
-
 static void run_task_1(void)
 {
     run_straight_to_line();
@@ -1414,42 +1006,244 @@ static void run_task_2(void)
     notice_arrived();
 }
 
-static void run_task_3_lap(bool finalLap)
+static void task3v2_turn_by_gyro(uint8_t direction, int32_t targetRaw, uint32_t maxMs)
 {
-    run_ac_straight_to_line();
-    notice_pass_point();
-    delay_ms(30U);
-    cb_entry_capture_line();
-    cb_run_arc_until_lost();
-    notice_pass_point();
-    delay_ms(20U);
-    bd_turn_toward_d();
-    run_bd_straight_to_line();
-    notice_pass_point();
-    delay_ms(80U);
-    da_entry_arc_left();
-    da_center_on_line();
-    da_run_arc_until_lost();
+    int32_t turn = 0;
 
-    if (finalLap) {
-        notice_arrived();
+    if (direction == TASK3V2_TURN_LEFT) {
+        motors_spin_left_dir();
     } else {
-        notice_pass_point();
-        delay_ms(60U);
-        a_turn_toward_c();
-        delay_ms(30U);
+        motors_spin_right_dir();
     }
+
+    for (uint32_t t = 0; t < maxMs; t++) {
+        int16_t gzRaw = 0;
+
+        if (imu_read_gyro_z(&gzRaw)) {
+            int32_t gz = (int32_t)gzRaw - gGyroZBias;
+
+            if ((gz > IMU_GYRO_DRIFT_DEAD_RAW) || (gz < -IMU_GYRO_DRIFT_DEAD_RAW)) {
+                turn += gz;
+            }
+            if ((t >= TASK3V2_TURN_MIN_MS) && (abs_i32(turn) >= targetRaw)) {
+                break;
+            }
+        }
+
+        pwm_run_1ms(TASK3V2_TURN_DUTY, TASK3V2_TURN_DUTY);
+    }
+
+    active_brake_then_stop();
+    delay_ms(TASK3V2_SETTLE_MS);
+}
+
+static void task3v2_open_turn(uint8_t direction, uint32_t turnMs)
+{
+    if (direction == TASK3V2_TURN_LEFT) {
+        motors_spin_left_dir();
+    } else {
+        motors_spin_right_dir();
+    }
+
+    for (uint32_t t = 0; t < turnMs; t++) {
+        pwm_run_1ms(TASK3V2_TURN_DUTY, TASK3V2_TURN_DUTY);
+    }
+
+    active_brake_then_stop();
+    delay_ms(TASK3V2_SETTLE_MS);
+}
+
+static void task3v2_heading_to_line(uint32_t ignoreMs)
+{
+    uint32_t confirmMs = 0;
+    int32_t heading = 0;
+
+    motors_forward_dir();
+
+    for (uint32_t t = 0; t < TASK3V2_FIND_MAX_MS; t++) {
+        uint8_t mask = track_read_mask();
+        int16_t gzRaw = 0;
+        int32_t correction = 0;
+
+        if ((t > ignoreMs) && line_detected_with_mask(mask, TASK3V2_LINE_MASK, 1U)) {
+            confirmMs++;
+            gLastLineHitMask = mask;
+        } else {
+            confirmMs = 0U;
+        }
+
+        if (confirmMs >= TASK3V2_LINE_CONFIRM_MS) {
+            break;
+        }
+
+        if (imu_read_gyro_z(&gzRaw)) {
+            int32_t gz = (int32_t)gzRaw - gGyroZBias;
+
+            if ((gz > IMU_GYRO_DRIFT_DEAD_RAW) || (gz < -IMU_GYRO_DRIFT_DEAD_RAW)) {
+                heading += gz;
+            }
+            correction = (heading * IMU_HEADING_KP) / IMU_HEADING_CORR_DIV;
+        }
+
+        pwm_run_1ms(clamp_duty((int32_t)TASK3V2_STRAIGHT_LEFT_DUTY + correction),
+            clamp_duty((int32_t)TASK3V2_STRAIGHT_RIGHT_DUTY - correction));
+    }
+
+    active_brake_then_stop();
+    delay_ms(TASK3V2_SETTLE_MS);
+}
+
+static void task3v2_capture_line(void)
+{
+    uint32_t confirmMs = 0;
+
+    motors_forward_dir();
+
+    for (uint32_t t = 0; t < TASK3V2_CAPTURE_MAX_MS; t++) {
+        uint8_t mask = track_read_mask();
+
+        if (line_detected_with_mask(mask, TASK3V2_CAPTURE_MASK, 1U)) {
+            confirmMs++;
+            gLastLineHitMask = mask;
+        } else {
+            confirmMs = 0U;
+        }
+
+        if (confirmMs >= TASK3V2_LINE_CONFIRM_MS) {
+            break;
+        }
+
+        pwm_run_1ms(TASK3V2_CAPTURE_LEFT_DUTY, TASK3V2_CAPTURE_RIGHT_DUTY);
+    }
+}
+
+static void task3v2_cb_follow_step(uint8_t mask, int16_t *lastError)
+{
+    uint8_t leftDuty;
+    uint8_t rightDuty;
+
+    if ((mask & 0x03U) != 0U) {
+        *lastError = -7;
+        leftDuty = 78U;
+        rightDuty = 8U;
+    } else if ((mask & 0xC0U) != 0U) {
+        *lastError = 7;
+        leftDuty = 28U;
+        rightDuty = 46U;
+    } else if (mask != 0U) {
+        int16_t error = track_error(mask);
+        int32_t correction = (int32_t)error * TASK3V2_CB_KP;
+
+        *lastError = error;
+        leftDuty = clamp_duty((int32_t)TASK3V2_CB_BASE_LEFT_DUTY - correction);
+        rightDuty = clamp_duty((int32_t)TASK3V2_CB_BASE_RIGHT_DUTY + correction);
+    } else if (*lastError < 0) {
+        leftDuty = 76U;
+        rightDuty = 8U;
+    } else if (*lastError > 0) {
+        leftDuty = 24U;
+        rightDuty = 48U;
+    } else {
+        leftDuty = TASK3V2_CB_BASE_LEFT_DUTY;
+        rightDuty = TASK3V2_CB_BASE_RIGHT_DUTY;
+    }
+
+    pwm_run_1ms(leftDuty, rightDuty);
+}
+
+static void task3v2_da_follow_step(uint8_t mask, int16_t *lastError)
+{
+    uint8_t leftDuty;
+    uint8_t rightDuty;
+
+    if ((mask & 0x03U) != 0U) {
+        *lastError = -7;
+        leftDuty = 46U;
+        rightDuty = 18U;
+    } else if ((mask & 0xC0U) != 0U) {
+        *lastError = 7;
+        leftDuty = 10U;
+        rightDuty = 68U;
+    } else if (mask != 0U) {
+        int16_t error = track_error(mask);
+        int32_t correction = (int32_t)error * TASK3V2_DA_KP;
+
+        *lastError = error;
+        leftDuty = clamp_duty((int32_t)TASK3V2_DA_BASE_LEFT_DUTY - correction);
+        rightDuty = clamp_duty((int32_t)TASK3V2_DA_BASE_RIGHT_DUTY + correction);
+    } else if (*lastError < 0) {
+        leftDuty = 44U;
+        rightDuty = 18U;
+    } else if (*lastError > 0) {
+        leftDuty = 10U;
+        rightDuty = 66U;
+    } else {
+        leftDuty = TASK3V2_DA_BASE_LEFT_DUTY;
+        rightDuty = TASK3V2_DA_BASE_RIGHT_DUTY;
+    }
+
+    pwm_run_1ms(leftDuty, rightDuty);
+}
+
+static void task3v2_follow_arc_until_lost(bool rightArc)
+{
+    uint32_t lostMs = 0;
+    int16_t lastError = rightArc ? 7 : -7;
+
+    motors_forward_dir();
+
+    for (uint32_t t = 0; ; t++) {
+        uint8_t mask = track_read_mask();
+
+        if ((t > TASK3V2_ARC_MIN_MS) && ((mask & ARC_LOST_MASK) == 0U)) {
+            lostMs++;
+        } else {
+            lostMs = 0U;
+        }
+
+        if (lostMs >= TASK3V2_ARC_LOST_CONFIRM_MS) {
+            break;
+        }
+
+        if (rightArc) {
+            task3v2_da_follow_step(mask, &lastError);
+        } else {
+            task3v2_cb_follow_step(mask, &lastError);
+        }
+    }
+
+    active_brake_then_stop();
 }
 
 static void run_task_3(void)
 {
-    run_task_3_lap(true);
+    task3v2_open_turn(TASK3V2_TURN_RIGHT, TASK3V2_A_TO_AC_OPEN_TURN_MS);
+    task3v2_heading_to_line(TASK3V2_C_FIND_IGNORE_MS);
+    notice_pass_point();
+    delay_ms(TASK3V2_POINT_DELAY_MS);
+
+    task3v2_open_turn(TASK3V2_TURN_LEFT, TASK3V2_C_TO_CB_OPEN_TURN_MS);
+    task3v2_capture_line();
+    task3v2_follow_arc_until_lost(false);
+    notice_pass_point();
+    delay_ms(TASK3V2_POINT_DELAY_MS);
+
+    task3v2_open_turn(TASK3V2_TURN_LEFT, TASK3V2_B_TO_BD_OPEN_TURN_MS);
+    task3v2_heading_to_line(TASK3V2_D_FIND_IGNORE_MS);
+    notice_pass_point();
+    delay_ms(TASK3V2_POINT_DELAY_MS);
+
+    task3v2_open_turn(TASK3V2_TURN_RIGHT, TASK3V2_D_TO_DA_OPEN_TURN_MS);
+    task3v2_capture_line();
+    task3v2_follow_arc_until_lost(true);
+    notice_arrived();
 }
 
 static void run_task_4(void)
 {
     for (uint8_t lap = 0; lap < 4U; lap++) {
-        run_task_3_lap(lap == 3U);
+        run_task_3();
+        delay_ms(120U);
     }
 }
 
