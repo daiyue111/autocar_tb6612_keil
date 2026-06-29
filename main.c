@@ -11,9 +11,14 @@
 #define STRAIGHT_RIGHT_DUTY 60U
 #define CD_STRAIGHT_LEFT_DUTY 54U
 #define CD_STRAIGHT_RIGHT_DUTY 60U
-#define CD_ALIGN_LEFT_DUTY 35U
-#define CD_ALIGN_RIGHT_DUTY 72U
-#define CD_ALIGN_MS 350U
+#define CD_ALIGN_LEFT_DUTY 42U
+#define CD_ALIGN_RIGHT_DUTY 62U
+#define CD_ALIGN_MS 900U
+#define CD_GYRO_ALIGN_RIGHT_RAW 95000
+#define CD_GYRO_ALIGN_RIGHT_MAX_MS 1200U
+#define CD_GYRO_ALIGN_RIGHT_DUTY 40U
+#define CD_GYRO_ALIGN_RIGHT_MIN_MS 60U
+#define CD_GYRO_ALIGN_RIGHT_NO_GYRO_STOP_MS 350U
 #define CD_CENTER_MASK 0x18U
 #define CD_CENTER_MAX_MS 260U
 #define LINE_BASE_LEFT_DUTY 32U
@@ -23,6 +28,10 @@
 #define TASK2_ARC_BASE_RIGHT_DUTY 44U
 #define TASK2_ARC_KP 7
 #define TASK2_ARC_LOST_CONFIRM_MS 160U
+#define TASK2_DA_BASE_LEFT_DUTY 26U
+#define TASK2_DA_BASE_RIGHT_DUTY 44U
+#define TASK2_DA_KP 7
+#define TASK2_D_ARC_SETTLE_MS 120U
 #define TASK3V2_GEOMETRY_DEG_X10 387
 #define TASK3V2_TURN_LEFT 0U
 #define TASK3V2_TURN_RIGHT 1U
@@ -92,8 +101,9 @@
 #define AC_LINE_DETECT_MIN_COUNT 1U
 #define BD_LINE_DETECT_MASK 0xFFU
 #define BD_LINE_DETECT_MIN_COUNT 1U
-#define CD_LINE_DETECT_MASK 0x3CU
+#define CD_LINE_DETECT_MASK 0xFFU
 #define CD_LINE_DETECT_MIN_COUNT 1U
+#define CD_LINE_IGNORE_MS 120U
 #define LINE_DETECT_CONFIRM_MS 1U
 #define STRAIGHT_LEAVE_LINE_IGNORE_MS 500U
 #define ARC_MIN_RUN_MS 800U
@@ -886,7 +896,7 @@ static void run_straight_to_line_with_duty(uint8_t leftDuty, uint8_t rightDuty,
 }
 
 static void run_heading_straight_to_line_with_duty(uint8_t leftDuty, uint8_t rightDuty,
-    uint8_t detectMask, uint8_t minCount, bool brakeAtEnd)
+    uint8_t detectMask, uint8_t minCount, uint32_t ignoreMs, bool brakeAtEnd)
 {
     uint32_t confirmMs = 0;
     int32_t heading = 0;
@@ -899,7 +909,7 @@ static void run_heading_straight_to_line_with_duty(uint8_t leftDuty, uint8_t rig
         int32_t correction = 0;
         int32_t gz = 0;
 
-        if ((t > START_IGNORE_MS) && line_detected_with_mask(mask, detectMask, minCount)) {
+        if ((t > ignoreMs) && line_detected_with_mask(mask, detectMask, minCount)) {
             confirmMs++;
         } else {
             confirmMs = 0U;
@@ -935,8 +945,8 @@ static void run_straight_to_line(void)
 
 static void run_cd_straight_to_line(void)
 {
-    run_straight_to_line_with_duty(CD_STRAIGHT_LEFT_DUTY, CD_STRAIGHT_RIGHT_DUTY,
-        CD_LINE_DETECT_MASK, CD_LINE_DETECT_MIN_COUNT, false);
+    run_heading_straight_to_line_with_duty(CD_STRAIGHT_LEFT_DUTY, CD_STRAIGHT_RIGHT_DUTY,
+        CD_LINE_DETECT_MASK, CD_LINE_DETECT_MIN_COUNT, CD_LINE_IGNORE_MS, true);
 }
 
 static void cd_exit_align_right(void)
@@ -946,6 +956,44 @@ static void cd_exit_align_right(void)
     for (uint32_t t = 0; t < CD_ALIGN_MS; t++) {
         pwm_run_1ms(CD_ALIGN_LEFT_DUTY, CD_ALIGN_RIGHT_DUTY);
     }
+}
+
+static void cd_gyro_align_right(void)
+{
+    int32_t turn = 0;
+    uint32_t validGyroMs = 0;
+
+    imu_rebias_gyro_z_fast();
+    motors_spin_right_dir();
+
+    for (uint32_t t = 0; t < CD_GYRO_ALIGN_RIGHT_MAX_MS; t++) {
+        int16_t gzRaw = 0;
+
+        if (((t % TASK3V2_GYRO_SAMPLE_MS) == 0U) && imu_read_gyro_z(&gzRaw)) {
+            int32_t gz = (int32_t)gzRaw - gGyroZBias;
+            int32_t sample = abs_i32(gz);
+
+            if (sample > TASK3V2_GYRO_SAMPLE_MAX_RAW) {
+                sample = TASK3V2_GYRO_SAMPLE_MAX_RAW;
+            }
+            if (sample > TASK3V2_TURN_DRIFT_DEAD_RAW) {
+                turn += sample * (int32_t)TASK3V2_GYRO_SAMPLE_MS;
+                validGyroMs += TASK3V2_GYRO_SAMPLE_MS;
+            }
+        }
+
+        if ((t > CD_GYRO_ALIGN_RIGHT_NO_GYRO_STOP_MS) && (validGyroMs == 0U)) {
+            break;
+        }
+        if ((t >= CD_GYRO_ALIGN_RIGHT_MIN_MS) && (turn >= CD_GYRO_ALIGN_RIGHT_RAW)) {
+            break;
+        }
+
+        pwm_run_1ms(CD_GYRO_ALIGN_RIGHT_DUTY, CD_GYRO_ALIGN_RIGHT_DUTY);
+    }
+
+    active_brake_then_stop();
+    delay_ms(80U);
 }
 
 static void cd_center_on_line(void)
@@ -1021,6 +1069,32 @@ static void task2_arc_follow_step(uint8_t mask, int16_t *lastError)
     pwm_run_1ms(leftDuty, rightDuty);
 }
 
+static void task2_da_follow_step(uint8_t mask, int16_t *lastError)
+{
+    uint8_t leftDuty;
+    uint8_t rightDuty;
+
+    if (mask != 0U) {
+        int16_t error = track_error(mask);
+        int32_t correction = (int32_t)error * TASK2_DA_KP;
+
+        *lastError = error;
+        leftDuty = clamp_duty((int32_t)TASK2_DA_BASE_LEFT_DUTY - correction);
+        rightDuty = clamp_duty((int32_t)TASK2_DA_BASE_RIGHT_DUTY + correction);
+    } else if (*lastError < 0) {
+        leftDuty = 82U;
+        rightDuty = 8U;
+    } else if (*lastError > 0) {
+        leftDuty = 8U;
+        rightDuty = 82U;
+    } else {
+        leftDuty = TASK2_DA_BASE_LEFT_DUTY;
+        rightDuty = TASK2_DA_BASE_RIGHT_DUTY;
+    }
+
+    pwm_run_1ms(leftDuty, rightDuty);
+}
+
 static void settle_on_arc(void)
 {
     int16_t lastError = 0;
@@ -1060,6 +1134,49 @@ static void run_arc_until_lost(void)
     active_brake_then_stop();
 }
 
+static void settle_on_d_arc_right(void)
+{
+    int16_t lastError = track_error(gLastLineHitMask);
+
+    motors_forward_dir();
+
+    for (uint32_t t = 0; t < TASK2_D_ARC_SETTLE_MS; t++) {
+        uint8_t mask = track_read_mask();
+
+        if (mask != 0U) {
+            gLastLineHitMask = mask;
+        }
+        task2_da_follow_step(mask, &lastError);
+    }
+}
+
+static void run_d_arc_until_lost(void)
+{
+    uint32_t lostConfirmMs = 0;
+    int16_t lastError = track_error(gLastLineHitMask);
+
+    motors_forward_dir();
+    settle_on_d_arc_right();
+
+    for (uint32_t t = 0; ; t++) {
+        uint8_t mask = track_read_mask();
+
+        if ((t > ARC_MIN_RUN_MS) && ((mask & ARC_LOST_MASK) == 0U)) {
+            lostConfirmMs++;
+        } else {
+            lostConfirmMs = 0U;
+        }
+
+        if (lostConfirmMs >= TASK2_ARC_LOST_CONFIRM_MS) {
+            break;
+        }
+
+        task2_da_follow_step(mask, &lastError);
+    }
+
+    active_brake_then_stop();
+}
+
 static void run_task_1(void)
 {
     run_straight_to_line();
@@ -1077,12 +1194,11 @@ static void run_task_2(void)
     return;
 #endif
     delay_ms(80U);
-    cd_exit_align_right();
-    cd_center_on_line();
+    cd_gyro_align_right();
     run_cd_straight_to_line();
     notice_pass_point();
     delay_ms(30U);
-    run_arc_until_lost();
+    run_d_arc_until_lost();
     notice_arrived();
 }
 
@@ -1514,6 +1630,9 @@ static void run_tasks_1_to_3_by_key(void)
     run_task_1();
     motors_safe_stop();
 
+    motors_safe_stop();
+    imu_init_for_route();
+    delay_ms(200U);
     wait_start_key();
     run_task_2();
     motors_safe_stop();
