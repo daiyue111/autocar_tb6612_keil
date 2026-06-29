@@ -58,7 +58,7 @@
 #define TASK3V2_C_TO_CB_TURN_MAX_MS 1000U
 #define TASK3V2_B_TO_BD_TURN_RAW 200000
 #define TASK3V2_B_TO_BD_TURN_MAX_MS 3000U
-#define TASK3V2_D_TO_DA_TURN_RAW 60000
+#define TASK3V2_D_TO_DA_TURN_RAW 65000
 #define TASK3V2_D_TO_DA_TURN_MAX_MS 3000U
 #define TASK3V2_STRAIGHT_LEFT_DUTY 45U
 #define TASK3V2_STRAIGHT_RIGHT_DUTY 51U
@@ -76,7 +76,7 @@
 #define TASK3V2_CAPTURE_MASK 0x3CU
 #define TASK3V2_ARC_MIN_MS 800U
 #define TASK3V2_DA_ARC_MIN_MS 1200U
-#define TASK3V2_DA_CAPTURE_MS 360U
+#define TASK3V2_DA_CAPTURE_MS 520U
 #define TASK3V2_ARC_LOST_CONFIRM_MS 140U
 #define TASK3V2_DA_ARC_LOST_CONFIRM_MS 360U
 #define TASK3V2_CB_BASE_LEFT_DUTY 44U
@@ -1363,11 +1363,16 @@ static void task3v2_da_follow_step(uint8_t mask, int16_t *lastError)
 static void task3v2_capture_da_arc(void)
 {
     int16_t lastError = 7;
+    uint32_t capturedMs = 0;
 
     motors_forward_dir();
 
-    for (uint32_t t = 0; t < TASK3V2_DA_CAPTURE_MS; t++) {
+    for (uint32_t t = 0; (t < TASK3V2_CAPTURE_MAX_MS) && (capturedMs < TASK3V2_DA_CAPTURE_MS); t++) {
         uint8_t mask = track_read_mask();
+
+        if (mask != 0U) {
+            capturedMs++;
+        }
         task3v2_da_follow_step(mask, &lastError);
     }
 }
@@ -1431,7 +1436,6 @@ static void run_task_3(void)
     (void)task3v2_turn_by_gyro_guarded(TASK3V2_TURN_RIGHT, TASK3V2_D_TO_DA_TURN_RAW,
         TASK3V2_D_TO_DA_TURN_MAX_MS, TASK3V2_D_TURN_NO_GYRO_STOP_MS,
         TASK3V2_D_TURN_MIN_MS, TASK3V2_TURN_DUTY, TASK3V2_TURN_KICK_DUTY);
-    task3v2_capture_line();
     task3v2_capture_da_arc();
     task3v2_follow_arc_until_lost(true);
     notice_arrived();
