@@ -76,7 +76,7 @@
 #define TASK3V2_CAPTURE_MASK 0x3CU
 #define TASK3V2_ARC_MIN_MS 800U
 #define TASK3V2_DA_ARC_MIN_MS 1200U
-#define TASK3V2_DA_CAPTURE_MS 520U
+#define TASK3V2_DA_CAPTURE_MS 620U
 #define TASK3V2_ARC_LOST_CONFIRM_MS 140U
 #define TASK3V2_DA_ARC_LOST_CONFIRM_MS 360U
 #define TASK3V2_CB_BASE_LEFT_DUTY 44U
@@ -1333,8 +1333,8 @@ static void task3v2_da_follow_step(uint8_t mask, int16_t *lastError)
 
     if ((mask & 0x03U) != 0U) {
         *lastError = -7;
-        leftDuty = 44U;
-        rightDuty = 18U;
+        leftDuty = 48U;
+        rightDuty = 16U;
     } else if ((mask & 0xC0U) != 0U) {
         *lastError = 7;
         leftDuty = 12U;
@@ -1347,8 +1347,8 @@ static void task3v2_da_follow_step(uint8_t mask, int16_t *lastError)
         leftDuty = clamp_duty((int32_t)TASK3V2_DA_BASE_LEFT_DUTY - correction);
         rightDuty = clamp_duty((int32_t)TASK3V2_DA_BASE_RIGHT_DUTY + correction);
     } else if (*lastError < 0) {
-        leftDuty = 42U;
-        rightDuty = 18U;
+        leftDuty = 46U;
+        rightDuty = 16U;
     } else if (*lastError > 0) {
         leftDuty = 12U;
         rightDuty = 62U;
