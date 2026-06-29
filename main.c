@@ -27,30 +27,37 @@
 #define TASK3V2_TURN_LEFT 0U
 #define TASK3V2_TURN_RIGHT 1U
 #define TASK3V2_TURN_DUTY 42U
+#define TASK3V2_B_TURN_DUTY 36U
 #define TASK3V2_TURN_KICK_DUTY 55U
+#define TASK3V2_B_TURN_KICK_DUTY 42U
 #define TASK3V2_TURN_KICK_MS 30U
 #define TASK3V2_TURN_INTEGRAL_IGNORE_MS 40U
 #define TASK3V2_GYRO_SAMPLE_MS 8U
 #define TASK3V2_GYRO_SAMPLE_MAX_RAW 12000
+#define TASK3V2_TURN_DRIFT_DEAD_RAW 5
 #define TASK3V2_TURN_NO_GYRO_STOP_MS 160U
 #define TASK3V2_A_TURN_NO_GYRO_STOP_MS 600U
-#define TASK3V2_B_TURN_NO_GYRO_STOP_MS 450U
+#define TASK3V2_B_TURN_NO_GYRO_STOP_MS 360U
 #define TASK3V2_D_TURN_NO_GYRO_STOP_MS 600U
 #define TASK3V2_TURN_MIN_MS 55U
+#define TASK3V2_B_TURN_MIN_MS 25U
 #define TASK3V2_SETTLE_MS 120U
 #define TASK3V2_POINT_DELAY_MS 80U
 #define TASK3V2_A_TO_AC_TURN_RAW 440000
 #define TASK3V2_A_TO_AC_TURN_MAX_MS 3000U
 #define TASK3V2_A_TO_AC_OPEN_TURN_MS 480U
 #define TASK3V2_C_TO_CB_OPEN_TURN_MS 360U
-#define TASK3V2_B_TO_BD_OPEN_TURN_MS 350U
+#define TASK3V2_B_TO_BD_OPEN_TURN_MS 240U
 #define TASK3V2_B_TO_BD_FALLBACK_TURN_MS 260U
 #define TASK3V2_D_TO_DA_OPEN_TURN_MS 360U
-#define TASK3V2_C_TO_CB_TURN_RAW 200000
+#define IMU_MOTOR_TEST_MS 2000U
+#define IMU_MOTOR_TEST_DUTY 30U
+#define IMU_MOTOR_TEST_SAMPLE_MS 8U
+#define TASK3V2_C_TO_CB_TURN_RAW 600000
 #define TASK3V2_C_TO_CB_TURN_MAX_MS 700U
-#define TASK3V2_B_TO_BD_TURN_RAW 100000
+#define TASK3V2_B_TO_BD_TURN_RAW 200000
 #define TASK3V2_B_TO_BD_TURN_MAX_MS 3000U
-#define TASK3V2_D_TO_DA_TURN_RAW 450000
+#define TASK3V2_D_TO_DA_TURN_RAW 400000
 #define TASK3V2_D_TO_DA_TURN_MAX_MS 3000U
 #define TASK3V2_STRAIGHT_LEFT_DUTY 45U
 #define TASK3V2_STRAIGHT_RIGHT_DUTY 51U
@@ -67,14 +74,16 @@
 #define TASK3V2_CAPTURE_MAX_MS 900U
 #define TASK3V2_CAPTURE_MASK 0x3CU
 #define TASK3V2_ARC_MIN_MS 800U
+#define TASK3V2_DA_ARC_MIN_MS 1200U
+#define TASK3V2_DA_CAPTURE_MS 360U
 #define TASK3V2_ARC_LOST_CONFIRM_MS 140U
-#define TASK3V2_DA_ARC_LOST_CONFIRM_MS 260U
+#define TASK3V2_DA_ARC_LOST_CONFIRM_MS 360U
 #define TASK3V2_CB_BASE_LEFT_DUTY 44U
 #define TASK3V2_CB_BASE_RIGHT_DUTY 20U
 #define TASK3V2_CB_KP 7
-#define TASK3V2_DA_BASE_LEFT_DUTY 18U
-#define TASK3V2_DA_BASE_RIGHT_DUTY 42U
-#define TASK3V2_DA_KP 7
+#define TASK3V2_DA_BASE_LEFT_DUTY 38U
+#define TASK3V2_DA_BASE_RIGHT_DUTY 18U
+#define TASK3V2_DA_KP 8
 #define START_IGNORE_MS 1200U
 #define LINE_DETECT_MASK 0xFFU
 #define LINE_DETECT_MIN_COUNT 1U
@@ -114,6 +123,9 @@
 #define IMU_HEADING_KP 3
 #define IMU_HEADING_CORR_DIV 900
 #define IMU_GYRO_DRIFT_DEAD_RAW 20
+#define IMU_FAST_REBIAS_SETTLE_MS 220U
+#define IMU_FAST_REBIAS_SAMPLES 64U
+#define IMU_FAST_REBIAS_SAMPLE_MS 4U
 
 
 #define PWM_STEP_DELAY_CYCLES (CPUCLK_FREQ / 200000U)
@@ -527,6 +539,59 @@ static bool imu_init_for_route(void)
     delay_ms(120U);
     gpio_write(LED_PORT, LED_PIN, false);
     return true;
+}
+
+static bool imu_rebias_gyro_z_fast(void)
+{
+    int32_t sum = 0;
+    uint16_t count = 0;
+
+    if (!gImuReady) {
+        return false;
+    }
+
+    motors_safe_stop();
+    delay_ms(IMU_FAST_REBIAS_SETTLE_MS);
+
+    for (uint8_t i = 0; i < IMU_FAST_REBIAS_SAMPLES; i++) {
+        int16_t gz = 0;
+
+        if (imu_read_gyro_z(&gz)) {
+            sum += gz;
+            count++;
+        }
+        delay_ms(IMU_FAST_REBIAS_SAMPLE_MS);
+    }
+
+    if (count == 0U) {
+        return false;
+    }
+
+    gGyroZBias = sum / (int32_t)count;
+    return true;
+}
+
+static bool imu_recover_and_rebias_fast(void)
+{
+    uint8_t addr = gImuAddr;
+
+    motors_safe_stop();
+    imu_i2c_recover();
+    delay_ms(20U);
+
+    if (!imu_detect_addr(&addr, false)) {
+        gImuReady = false;
+        return false;
+    }
+
+    gImuAddr = addr;
+    if (!imu_start_motion_sensors(gImuAddr)) {
+        gImuReady = false;
+        return false;
+    }
+
+    gImuReady = true;
+    return imu_rebias_gyro_z_fast();
 }
 
 static void run_imu_comm_test(void)
@@ -1021,11 +1086,11 @@ static void run_task_2(void)
 }
 
 static bool task3v2_turn_by_gyro_guarded(uint8_t direction, int32_t targetRaw, uint32_t maxMs,
-    uint32_t noGyroStopMs)
+    uint32_t noGyroStopMs, uint32_t minMs, uint8_t runDuty, uint8_t kickDuty)
 {
     int32_t turn = 0;
+    uint32_t gyroReadMs = 0;
     uint32_t validGyroMs = 0;
-    bool reachedTarget = false;
 
     if (direction == TASK3V2_TURN_LEFT) {
         motors_spin_left_dir();
@@ -1034,6 +1099,57 @@ static bool task3v2_turn_by_gyro_guarded(uint8_t direction, int32_t targetRaw, u
     }
 
     for (uint32_t t = 0; t < maxMs; t++) {
+        int16_t gzRaw = 0;
+        uint8_t duty = (t < TASK3V2_TURN_KICK_MS) ? kickDuty : runDuty;
+
+        if (((t % TASK3V2_GYRO_SAMPLE_MS) == 0U) && imu_read_gyro_z(&gzRaw)) {
+            int32_t gz = (int32_t)gzRaw - gGyroZBias;
+            int32_t sample = abs_i32(gz);
+
+            if (t >= TASK3V2_TURN_INTEGRAL_IGNORE_MS) {
+                gyroReadMs += TASK3V2_GYRO_SAMPLE_MS;
+            }
+            if (sample > TASK3V2_GYRO_SAMPLE_MAX_RAW) {
+                sample = TASK3V2_GYRO_SAMPLE_MAX_RAW;
+            }
+            if ((t >= TASK3V2_TURN_INTEGRAL_IGNORE_MS) &&
+                (sample > TASK3V2_TURN_DRIFT_DEAD_RAW)) {
+                turn += sample * (int32_t)TASK3V2_GYRO_SAMPLE_MS;
+                validGyroMs += TASK3V2_GYRO_SAMPLE_MS;
+            }
+        }
+
+        if ((t > noGyroStopMs) && (validGyroMs == 0U)) {
+            break;
+        }
+        if ((t >= minMs) && (turn >= targetRaw)) {
+            break;
+        }
+
+        pwm_run_1ms(duty, duty);
+    }
+
+    active_brake_then_stop();
+    delay_ms(TASK3V2_SETTLE_MS);
+
+    return gyroReadMs > 0U;
+}
+
+static void task3v2_turn_by_gyro(uint8_t direction, int32_t targetRaw, uint32_t maxMs)
+{
+    (void)task3v2_turn_by_gyro_guarded(direction, targetRaw, maxMs,
+        TASK3V2_TURN_NO_GYRO_STOP_MS, TASK3V2_TURN_MIN_MS,
+        TASK3V2_TURN_DUTY, TASK3V2_TURN_KICK_DUTY);
+}
+
+static void task3v2_a_turn_by_gyro(void)
+{
+    int32_t turn = 0;
+    uint32_t validGyroMs = 0;
+
+    motors_spin_right_dir();
+
+    for (uint32_t t = 0; t < TASK3V2_A_TO_AC_TURN_MAX_MS; t++) {
         int16_t gzRaw = 0;
         uint8_t duty = (t < TASK3V2_TURN_KICK_MS) ? TASK3V2_TURN_KICK_DUTY :
             TASK3V2_TURN_DUTY;
@@ -1046,17 +1162,16 @@ static bool task3v2_turn_by_gyro_guarded(uint8_t direction, int32_t targetRaw, u
                 sample = TASK3V2_GYRO_SAMPLE_MAX_RAW;
             }
             if ((t >= TASK3V2_TURN_INTEGRAL_IGNORE_MS) &&
-                (sample > IMU_GYRO_DRIFT_DEAD_RAW)) {
+                (sample > TASK3V2_TURN_DRIFT_DEAD_RAW)) {
                 turn += sample * (int32_t)TASK3V2_GYRO_SAMPLE_MS;
                 validGyroMs += TASK3V2_GYRO_SAMPLE_MS;
             }
         }
 
-        if ((t > noGyroStopMs) && (validGyroMs == 0U)) {
+        if ((t > TASK3V2_A_TURN_NO_GYRO_STOP_MS) && (validGyroMs == 0U)) {
             break;
         }
-        if ((t >= TASK3V2_TURN_MIN_MS) && (turn >= targetRaw)) {
-            reachedTarget = true;
+        if ((t >= TASK3V2_TURN_MIN_MS) && (turn >= TASK3V2_A_TO_AC_TURN_RAW)) {
             break;
         }
 
@@ -1065,14 +1180,6 @@ static bool task3v2_turn_by_gyro_guarded(uint8_t direction, int32_t targetRaw, u
 
     active_brake_then_stop();
     delay_ms(TASK3V2_SETTLE_MS);
-
-    return reachedTarget;
-}
-
-static void task3v2_turn_by_gyro(uint8_t direction, int32_t targetRaw, uint32_t maxMs)
-{
-    (void)task3v2_turn_by_gyro_guarded(direction, targetRaw, maxMs,
-        TASK3V2_TURN_NO_GYRO_STOP_MS);
 }
 
 static void task3v2_open_turn(uint8_t direction, uint32_t turnMs)
@@ -1086,6 +1193,21 @@ static void task3v2_open_turn(uint8_t direction, uint32_t turnMs)
     for (uint32_t t = 0; t < turnMs; t++) {
         uint8_t duty = (t < TASK3V2_TURN_KICK_MS) ? TASK3V2_TURN_KICK_DUTY :
             TASK3V2_TURN_DUTY;
+
+        pwm_run_1ms(duty, duty);
+    }
+
+    active_brake_then_stop();
+    delay_ms(TASK3V2_SETTLE_MS);
+}
+
+static void task3v2_b_open_turn_to_bd(void)
+{
+    motors_spin_left_dir();
+
+    for (uint32_t t = 0; t < TASK3V2_B_TO_BD_OPEN_TURN_MS; t++) {
+        uint8_t duty = (t < TASK3V2_TURN_KICK_MS) ? TASK3V2_B_TURN_KICK_DUTY :
+            TASK3V2_B_TURN_DUTY;
 
         pwm_run_1ms(duty, duty);
     }
@@ -1237,9 +1359,22 @@ static void task3v2_da_follow_step(uint8_t mask, int16_t *lastError)
     pwm_run_1ms(leftDuty, rightDuty);
 }
 
+static void task3v2_capture_da_arc(void)
+{
+    int16_t lastError = 7;
+
+    motors_forward_dir();
+
+    for (uint32_t t = 0; t < TASK3V2_DA_CAPTURE_MS; t++) {
+        uint8_t mask = track_read_mask();
+        task3v2_da_follow_step(mask, &lastError);
+    }
+}
+
 static void task3v2_follow_arc_until_lost(bool rightArc)
 {
     uint32_t lostMs = 0;
+    uint32_t arcMinMs = rightArc ? TASK3V2_DA_ARC_MIN_MS : TASK3V2_ARC_MIN_MS;
     uint32_t lostConfirmMs = rightArc ? TASK3V2_DA_ARC_LOST_CONFIRM_MS :
         TASK3V2_ARC_LOST_CONFIRM_MS;
     int16_t lastError = rightArc ? 7 : -7;
@@ -1249,7 +1384,7 @@ static void task3v2_follow_arc_until_lost(bool rightArc)
     for (uint32_t t = 0; ; t++) {
         uint8_t mask = track_read_mask();
 
-        if ((t > TASK3V2_ARC_MIN_MS) && ((mask & ARC_LOST_MASK) == 0U)) {
+        if ((t > arcMinMs) && ((mask & ARC_LOST_MASK) == 0U)) {
             lostMs++;
         } else {
             lostMs = 0U;
@@ -1271,8 +1406,7 @@ static void task3v2_follow_arc_until_lost(bool rightArc)
 
 static void run_task_3(void)
 {
-    (void)task3v2_turn_by_gyro_guarded(TASK3V2_TURN_RIGHT, TASK3V2_A_TO_AC_TURN_RAW,
-        TASK3V2_A_TO_AC_TURN_MAX_MS, TASK3V2_A_TURN_NO_GYRO_STOP_MS);
+    task3v2_a_turn_by_gyro();
     task3v2_heading_to_line_with_settle(TASK3V2_C_FIND_IGNORE_MS,
         TASK3V2_C_LINE_SETTLE_MS);
     notice_pass_point();
@@ -1286,15 +1420,18 @@ static void run_task_3(void)
     delay_ms(TASK3V2_POINT_DELAY_MS);
 
     (void)task3v2_turn_by_gyro_guarded(TASK3V2_TURN_LEFT, TASK3V2_B_TO_BD_TURN_RAW,
-        TASK3V2_B_TO_BD_TURN_MAX_MS, TASK3V2_B_TURN_NO_GYRO_STOP_MS);
+        TASK3V2_B_TO_BD_TURN_MAX_MS, TASK3V2_B_TURN_NO_GYRO_STOP_MS,
+        TASK3V2_B_TURN_MIN_MS, TASK3V2_B_TURN_DUTY, TASK3V2_B_TURN_KICK_DUTY);
     task3v2_heading_to_line_with_settle(TASK3V2_D_FIND_IGNORE_MS,
         TASK3V2_D_LINE_SETTLE_MS);
     notice_pass_point();
     delay_ms(TASK3V2_POINT_DELAY_MS);
 
     (void)task3v2_turn_by_gyro_guarded(TASK3V2_TURN_RIGHT, TASK3V2_D_TO_DA_TURN_RAW,
-        TASK3V2_D_TO_DA_TURN_MAX_MS, TASK3V2_D_TURN_NO_GYRO_STOP_MS);
+        TASK3V2_D_TO_DA_TURN_MAX_MS, TASK3V2_D_TURN_NO_GYRO_STOP_MS,
+        TASK3V2_TURN_MIN_MS, TASK3V2_TURN_DUTY, TASK3V2_TURN_KICK_DUTY);
     task3v2_capture_line();
+    task3v2_capture_da_arc();
     task3v2_follow_arc_until_lost(true);
     notice_arrived();
 }
@@ -1304,6 +1441,54 @@ static void run_task_4(void)
     for (uint8_t lap = 0; lap < 4U; lap++) {
         run_task_3();
         delay_ms(120U);
+    }
+}
+
+static void run_imu_motor_noise_test(void)
+{
+    uint16_t readCount = 0;
+    int32_t gxSum = 0;
+    int32_t gySum = 0;
+    int32_t gzSum = 0;
+
+    if (!gImuReady && !imu_init_for_route()) {
+        notice_imu_fail_code(2U);
+        return;
+    }
+
+    motors_spin_left_dir();
+
+    for (uint32_t t = 0; t < IMU_MOTOR_TEST_MS; t++) {
+        int16_t gxRaw = 0;
+        int16_t gyRaw = 0;
+        int16_t gzRaw = 0;
+
+        if (((t % IMU_MOTOR_TEST_SAMPLE_MS) == 0U) &&
+            imu_read_i16_addr(gImuAddr, IMU_GYRO_DATA_X1, &gxRaw) &&
+            imu_read_i16_addr(gImuAddr, IMU_GYRO_DATA_Y1, &gyRaw) &&
+            imu_read_i16_addr(gImuAddr, IMU_GYRO_DATA_Z1, &gzRaw)) {
+
+            readCount++;
+            gxSum += abs_i32((int32_t)gxRaw);
+            gySum += abs_i32((int32_t)gyRaw);
+            gzSum += abs_i32((int32_t)gzRaw - gGyroZBias);
+        }
+
+        pwm_run_1ms(IMU_MOTOR_TEST_DUTY, IMU_MOTOR_TEST_DUTY);
+    }
+
+    active_brake_then_stop();
+
+    if (readCount < 20U) {
+        notice_imu_fail_code(2U);
+    } else if ((gxSum < 2000) && (gySum < 2000) && (gzSum < 2000)) {
+        notice_imu_fail_code(4U);
+    } else if ((gxSum >= gySum) && (gxSum >= gzSum)) {
+        notice_imu_fail_code(1U);
+    } else if (gySum >= gzSum) {
+        notice_imu_fail_code(2U);
+    } else {
+        notice_imu_fail_code(3U);
     }
 }
 
@@ -1359,6 +1544,8 @@ int main(void)
     wait_start_key();
 #if TASK_MODE == 4U
     run_task_4();
+#elif TASK_MODE == 98U
+    run_imu_motor_noise_test();
 #elif TASK_MODE == 3U
     run_task_3();
 #elif TASK_MODE == 2U
