@@ -84,7 +84,7 @@
 #define TASK3V2_CB_KP 7
 #define TASK3V2_DA_BASE_LEFT_DUTY 38U
 #define TASK3V2_DA_BASE_RIGHT_DUTY 18U
-#define TASK3V2_DA_KP 8
+#define TASK3V2_DA_KP 7
 #define START_IGNORE_MS 1200U
 #define LINE_DETECT_MASK 0xFFU
 #define LINE_DETECT_MIN_COUNT 1U
@@ -1333,12 +1333,12 @@ static void task3v2_da_follow_step(uint8_t mask, int16_t *lastError)
 
     if ((mask & 0x03U) != 0U) {
         *lastError = -7;
-        leftDuty = 46U;
+        leftDuty = 44U;
         rightDuty = 18U;
     } else if ((mask & 0xC0U) != 0U) {
         *lastError = 7;
-        leftDuty = 10U;
-        rightDuty = 68U;
+        leftDuty = 12U;
+        rightDuty = 62U;
     } else if (mask != 0U) {
         int16_t error = track_error(mask);
         int32_t correction = (int32_t)error * TASK3V2_DA_KP;
@@ -1347,11 +1347,11 @@ static void task3v2_da_follow_step(uint8_t mask, int16_t *lastError)
         leftDuty = clamp_duty((int32_t)TASK3V2_DA_BASE_LEFT_DUTY - correction);
         rightDuty = clamp_duty((int32_t)TASK3V2_DA_BASE_RIGHT_DUTY + correction);
     } else if (*lastError < 0) {
-        leftDuty = 44U;
+        leftDuty = 42U;
         rightDuty = 18U;
     } else if (*lastError > 0) {
-        leftDuty = 10U;
-        rightDuty = 66U;
+        leftDuty = 12U;
+        rightDuty = 62U;
     } else {
         leftDuty = TASK3V2_DA_BASE_LEFT_DUTY;
         rightDuty = TASK3V2_DA_BASE_RIGHT_DUTY;
