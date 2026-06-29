@@ -4,7 +4,7 @@
 
 #define IMU_TEST_MODE 0U
 
-#define TASK_MODE 3U
+#define TASK_MODE 123U
 #define TASK2_STOP_AT_C_DEBUG 0U
 
 #define STRAIGHT_LEFT_DUTY 53U
@@ -1518,6 +1518,9 @@ static void run_tasks_1_to_3_by_key(void)
     run_task_2();
     motors_safe_stop();
 
+    motors_safe_stop();
+    imu_init_for_route();
+    delay_ms(200U);
     wait_start_key();
     run_task_3();
     motors_safe_stop();
@@ -1539,7 +1542,9 @@ int main(void)
     }
 #endif
 
+#if TASK_MODE != 123U
     imu_init_for_route();
+#endif
 
 #if TASK_MODE == 12U
     run_tasks_1_to_2_by_key();
