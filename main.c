@@ -4,7 +4,7 @@
 
 #define IMU_TEST_MODE 0U
 
-#define TASK_MODE 123U
+#define TASK_MODE 99U
 #define TASK2_STOP_AT_C_DEBUG 0U
 
 #define STRAIGHT_LEFT_DUTY 53U
@@ -146,6 +146,8 @@ static int32_t gGyroZBias = 0;
 static bool gImuReady = false;
 static uint8_t gLastLineHitMask = 0U;
 
+static bool imu_init_for_route(void);
+
 static void delay_ms(uint32_t ms)
 {
     while (ms--) {
@@ -208,6 +210,17 @@ static void motors_safe_stop(void)
     gpio_write(MOTOR_DIN2_PORT, MOTOR_DIN2_PIN, false);
 }
 
+static void prepare_task_as_power_on(void)
+{
+    gLastLineHitMask = 0U;
+    gGyroZBias = 0;
+    gImuReady = false;
+    motors_safe_stop();
+    delay_ms(500U);
+    imu_init_for_route();
+    delay_ms(300U);
+}
+
 static void notice_arrived(void)
 {
     for (uint32_t i = 0; i < 180U; i++) {
@@ -237,6 +250,16 @@ static void notice_pass_point(void)
     gpio_write(LED_PORT, LED_PIN, true);
     delay_ms(80U);
     gpio_write(LED_PORT, LED_PIN, false);
+}
+
+static void notice_task_selected(uint8_t task)
+{
+    for (uint8_t i = 0; i < task; i++) {
+        gpio_write(LED_PORT, LED_PIN, true);
+        delay_ms(120U);
+        gpio_write(LED_PORT, LED_PIN, false);
+        delay_ms(160U);
+    }
 }
 
 static void notice_imu_success(void)
@@ -1185,6 +1208,7 @@ static void run_task_1(void)
 
 static void run_task_2(void)
 {
+    gLastLineHitMask = 0U;
     run_straight_to_line();
     notice_pass_point();
     delay_ms(80U);
@@ -1616,10 +1640,12 @@ static void run_imu_motor_noise_test(void)
 static void run_tasks_1_to_2_by_key(void)
 {
     wait_start_key();
+    prepare_task_as_power_on();
     run_task_1();
     motors_safe_stop();
 
     wait_start_key();
+    prepare_task_as_power_on();
     run_task_2();
     motors_safe_stop();
 }
@@ -1627,21 +1653,70 @@ static void run_tasks_1_to_2_by_key(void)
 static void run_tasks_1_to_3_by_key(void)
 {
     wait_start_key();
+    prepare_task_as_power_on();
     run_task_1();
     motors_safe_stop();
 
-    motors_safe_stop();
-    imu_init_for_route();
-    delay_ms(200U);
     wait_start_key();
+    prepare_task_as_power_on();
     run_task_2();
     motors_safe_stop();
 
-    motors_safe_stop();
-    imu_init_for_route();
-    delay_ms(200U);
     wait_start_key();
+    prepare_task_as_power_on();
     run_task_3();
+    motors_safe_stop();
+}
+
+static uint8_t select_task_by_key(void)
+{
+    uint8_t task = 1U;
+
+    notice_task_selected(task);
+
+    while (1) {
+        uint32_t pressedMs = 0;
+
+        while (!key_pressed()) {
+            delay_ms(10U);
+        }
+
+        while (key_pressed()) {
+            if (pressedMs < 3000U) {
+                pressedMs += 10U;
+            }
+            delay_ms(10U);
+        }
+        delay_ms(120U);
+
+        if (pressedMs >= 1200U) {
+            notice_task_selected(task);
+            delay_ms(300U);
+            return task;
+        }
+
+        task++;
+        if (task > 3U) {
+            task = 1U;
+        }
+        notice_task_selected(task);
+    }
+}
+
+static void run_selected_task_once(void)
+{
+    uint8_t task = select_task_by_key();
+
+    prepare_task_as_power_on();
+
+    if (task == 1U) {
+        run_task_1();
+    } else if (task == 2U) {
+        run_task_2();
+    } else {
+        run_task_3();
+    }
+
     motors_safe_stop();
 }
 
@@ -1661,11 +1736,13 @@ int main(void)
     }
 #endif
 
-#if TASK_MODE != 123U
+#if (TASK_MODE != 12U) && (TASK_MODE != 99U) && (TASK_MODE != 123U)
     imu_init_for_route();
 #endif
 
-#if TASK_MODE == 12U
+#if TASK_MODE == 99U
+    run_selected_task_once();
+#elif TASK_MODE == 12U
     run_tasks_1_to_2_by_key();
 #elif TASK_MODE == 123U
     run_tasks_1_to_3_by_key();
