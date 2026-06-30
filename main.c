@@ -9,7 +9,7 @@
 #define STOP_MIN_CENTER_COUNT 1U
 #define STOP_CONFIRM_MS 1U
 #define BRAKE_MS 80U
-#define BEEP_HALF_PERIOD_CYCLES (CPUCLK_FREQ / 3000U)
+#define BEEP_HALF_PERIOD_CYCLES (CPUCLK_FREQ / 4000U)
 
 #define PWM_PERIOD_TICKS 200U
 
@@ -80,7 +80,7 @@ static void motors_safe_stop(void)
 
 static void notice_arrived(void)
 {
-    for (uint32_t i = 0; i < 180U; i++) {
+    for (uint32_t i = 0; i < 1000U; i++) {
         gpio_write(BEEP_PORT, BEEP_PIN, true);
         delay_cycles(BEEP_HALF_PERIOD_CYCLES);
         gpio_write(BEEP_PORT, BEEP_PIN, false);

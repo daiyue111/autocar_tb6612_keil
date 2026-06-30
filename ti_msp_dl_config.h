@@ -110,8 +110,8 @@ extern "C" {
 #define LED_IOMUX IOMUX_PINCM44
 
 #define BEEP_PORT GPIOA
-#define BEEP_PIN  DL_GPIO_PIN_21
-#define BEEP_IOMUX IOMUX_PINCM46
+#define BEEP_PIN  DL_GPIO_PIN_7
+#define BEEP_IOMUX IOMUX_PINCM14
 
 void SYSCFG_DL_init(void);
 
