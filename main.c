@@ -2,12 +2,29 @@
 
 #define TRACK_BLACK_IS_HIGH 0U
 
+#define TASK_MODE 2U
+
 #define STRAIGHT_LEFT_DUTY 53U
 #define STRAIGHT_RIGHT_DUTY 60U
+#define CD_STRAIGHT_LEFT_DUTY 54U
+#define CD_STRAIGHT_RIGHT_DUTY 60U
+#define CD_ALIGN_LEFT_DUTY 35U
+#define CD_ALIGN_RIGHT_DUTY 72U
+#define CD_ALIGN_MS 380U
+#define LINE_BASE_LEFT_DUTY 38U
+#define LINE_BASE_RIGHT_DUTY 44U
+#define LINE_KP 5
 #define START_IGNORE_MS 1200U
-#define STOP_CENTER_MASK 0xFFU
-#define STOP_MIN_CENTER_COUNT 1U
-#define STOP_CONFIRM_MS 1U
+#define LINE_DETECT_MASK 0xFFU
+#define LINE_DETECT_MIN_COUNT 1U
+#define CD_LINE_DETECT_MASK 0x3CU
+#define CD_LINE_DETECT_MIN_COUNT 1U
+#define LINE_DETECT_CONFIRM_MS 1U
+#define STRAIGHT_LEAVE_LINE_IGNORE_MS 500U
+#define ARC_MIN_RUN_MS 800U
+#define ARC_LOST_CONFIRM_MS 120U
+#define ARC_LOST_MASK 0xFFU
+#define ARC_SETTLE_MS 350U
 #define BRAKE_MS 80U
 #define BEEP_HALF_PERIOD_CYCLES (CPUCLK_FREQ / 4000U)
 
@@ -95,6 +112,20 @@ static void notice_arrived(void)
     }
 }
 
+static void notice_pass_point(void)
+{
+    for (uint32_t i = 0; i < 60U; i++) {
+        gpio_write(BEEP_PORT, BEEP_PIN, true);
+        delay_cycles(BEEP_HALF_PERIOD_CYCLES);
+        gpio_write(BEEP_PORT, BEEP_PIN, false);
+        delay_cycles(BEEP_HALF_PERIOD_CYCLES);
+    }
+
+    gpio_write(LED_PORT, LED_PIN, true);
+    delay_ms(80U);
+    gpio_write(LED_PORT, LED_PIN, false);
+}
+
 static void motors_forward_dir(void)
 {
     gpio_write(MOTOR_AIN1_PORT, MOTOR_AIN1_PIN, true);
@@ -133,6 +164,17 @@ static void motors_brake(void)
     gpio_write(MOTOR_PWMB_PORT, MOTOR_PWMB_PIN, true);
     gpio_write(MOTOR_PWMC_PORT, MOTOR_PWMC_PIN, true);
     gpio_write(MOTOR_PWMD_PORT, MOTOR_PWMD_PIN, true);
+}
+
+static uint8_t clamp_duty(int32_t duty)
+{
+    if (duty < 0) {
+        return 0U;
+    }
+    if (duty > (int32_t)PWM_PERIOD_TICKS) {
+        return PWM_PERIOD_TICKS;
+    }
+    return (uint8_t)duty;
 }
 
 static void pwm_run_1ms(uint8_t leftDuty, uint8_t rightDuty)
@@ -197,17 +239,176 @@ static uint8_t bit_count(uint8_t mask)
     return count;
 }
 
-static bool b_line_detected(void)
+static int16_t track_error(uint8_t mask)
 {
-    uint8_t centerMask = track_read_mask() & STOP_CENTER_MASK;
+    static const int8_t weights[8] = {-7, -5, -3, -1, 1, 3, 5, 7};
+    int16_t sum = 0;
+    uint8_t count = 0;
 
-    return bit_count(centerMask) >= STOP_MIN_CENTER_COUNT;
+    for (uint8_t i = 0; i < 8U; i++) {
+        if ((mask & (uint8_t)(1U << i)) != 0U) {
+            sum += weights[i];
+            count++;
+        }
+    }
+
+    if (count == 0U) {
+        return 0;
+    }
+
+    return (int16_t)(sum / count);
+}
+
+static bool line_detected_with_mask(uint8_t mask, uint8_t detectMask, uint8_t minCount)
+{
+    return bit_count(mask & detectMask) >= minCount;
+}
+
+static void active_brake_then_stop(void)
+{
+    motors_brake();
+    delay_ms(BRAKE_MS);
+    motors_safe_stop();
+}
+
+static void run_straight_to_line_with_duty(uint8_t leftDuty, uint8_t rightDuty,
+    uint8_t detectMask, uint8_t minCount, bool brakeAtEnd)
+{
+    uint32_t confirmMs = 0;
+
+    motors_forward_dir();
+
+    for (uint32_t t = 0; ; t++) {
+        uint8_t mask = track_read_mask();
+
+        if ((t > START_IGNORE_MS) && line_detected_with_mask(mask, detectMask, minCount)) {
+            confirmMs++;
+        } else {
+            confirmMs = 0U;
+        }
+
+        if (confirmMs >= LINE_DETECT_CONFIRM_MS) {
+            break;
+        }
+
+        pwm_run_1ms(leftDuty, rightDuty);
+    }
+
+    if (brakeAtEnd) {
+        active_brake_then_stop();
+    }
+}
+
+static void run_straight_to_line(void)
+{
+    run_straight_to_line_with_duty(STRAIGHT_LEFT_DUTY, STRAIGHT_RIGHT_DUTY,
+        LINE_DETECT_MASK, LINE_DETECT_MIN_COUNT, true);
+}
+
+static void run_cd_straight_to_line(void)
+{
+    run_straight_to_line_with_duty(CD_STRAIGHT_LEFT_DUTY, CD_STRAIGHT_RIGHT_DUTY,
+        CD_LINE_DETECT_MASK, CD_LINE_DETECT_MIN_COUNT, false);
+}
+
+static void cd_exit_align_right(void)
+{
+    motors_forward_dir();
+
+    for (uint32_t t = 0; t < CD_ALIGN_MS; t++) {
+        pwm_run_1ms(CD_ALIGN_LEFT_DUTY, CD_ALIGN_RIGHT_DUTY);
+    }
+}
+
+static void line_follow_step(uint8_t mask, int16_t *lastError)
+{
+    uint8_t leftDuty;
+    uint8_t rightDuty;
+
+    if (mask != 0U) {
+        int16_t error = track_error(mask);
+        int32_t correction = (int32_t)error * LINE_KP;
+
+        *lastError = error;
+        leftDuty = clamp_duty((int32_t)LINE_BASE_LEFT_DUTY - correction);
+        rightDuty = clamp_duty((int32_t)LINE_BASE_RIGHT_DUTY + correction);
+    } else if (*lastError < 0) {
+        leftDuty = 62U;
+        rightDuty = 32U;
+    } else if (*lastError > 0) {
+        leftDuty = 28U;
+        rightDuty = 68U;
+    } else {
+        leftDuty = LINE_BASE_LEFT_DUTY;
+        rightDuty = LINE_BASE_RIGHT_DUTY;
+    }
+
+    pwm_run_1ms(leftDuty, rightDuty);
+}
+
+static void settle_on_arc(void)
+{
+    int16_t lastError = 0;
+
+    motors_forward_dir();
+
+    for (uint32_t t = 0; t < ARC_SETTLE_MS; t++) {
+        uint8_t mask = track_read_mask();
+        line_follow_step(mask, &lastError);
+    }
+}
+
+static void run_arc_until_lost(void)
+{
+    uint32_t lostConfirmMs = 0;
+    int16_t lastError = 0;
+
+    motors_forward_dir();
+    settle_on_arc();
+
+    for (uint32_t t = 0; ; t++) {
+        uint8_t mask = track_read_mask();
+
+        if ((t > ARC_MIN_RUN_MS) && ((mask & ARC_LOST_MASK) == 0U)) {
+            lostConfirmMs++;
+        } else {
+            lostConfirmMs = 0U;
+        }
+
+        if (lostConfirmMs >= ARC_LOST_CONFIRM_MS) {
+            break;
+        }
+
+        line_follow_step(mask, &lastError);
+    }
+
+    active_brake_then_stop();
+}
+
+static void run_task_1(void)
+{
+    run_straight_to_line();
+    notice_arrived();
+}
+
+static void run_task_2(void)
+{
+    run_straight_to_line();
+    notice_pass_point();
+    delay_ms(80U);
+    run_arc_until_lost();
+    notice_pass_point();
+    delay_ms(80U);
+    cd_exit_align_right();
+    run_cd_straight_to_line();
+    notice_pass_point();
+    delay_ms(30U);
+    run_arc_until_lost();
+    notice_arrived();
 }
 
 int main(void)
 {
-    uint32_t stopConfirmMs = 0;
-
     SYSCFG_DL_init();
     gpio_write(MOTOR_STBY_PORT, MOTOR_STBY_PIN, true);
     gpio_write(LED_PORT, LED_PIN, false);
@@ -215,30 +416,11 @@ int main(void)
     motors_safe_stop();
 
     wait_start_key();
-    motors_forward_dir();
-
-    for (uint32_t t = 0; ; t++) {
-        uint8_t currentMask = track_read_mask();
-        uint8_t centerMask = currentMask & STOP_CENTER_MASK;
-
-        if ((t > START_IGNORE_MS) &&
-            (bit_count(centerMask) >= STOP_MIN_CENTER_COUNT)) {
-            stopConfirmMs++;
-        } else {
-            stopConfirmMs = 0U;
-        }
-
-        if (stopConfirmMs >= STOP_CONFIRM_MS) {
-            break;
-        }
-
-        pwm_run_1ms(STRAIGHT_LEFT_DUTY, STRAIGHT_RIGHT_DUTY);
-    }
-
-    motors_brake();
-    delay_ms(BRAKE_MS);
-    motors_safe_stop();
-    notice_arrived();
+#if TASK_MODE == 2U
+    run_task_2();
+#else
+    run_task_1();
+#endif
 
     while (1) {
         motors_safe_stop();
