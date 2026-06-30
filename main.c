@@ -2,7 +2,7 @@
 
 #define TRACK_BLACK_IS_HIGH 0U
 
-#define TASK_MODE 2U
+#define TASK_MODE 12U
 
 #define STRAIGHT_LEFT_DUTY 53U
 #define STRAIGHT_RIGHT_DUTY 60U
@@ -421,6 +421,17 @@ static void run_task_2(void)
     notice_arrived();
 }
 
+static void run_tasks_1_to_2_by_key(void)
+{
+    wait_start_key();
+    run_task_1();
+    motors_safe_stop();
+
+    wait_start_key();
+    run_task_2();
+    motors_safe_stop();
+}
+
 int main(void)
 {
     SYSCFG_DL_init();
@@ -429,11 +440,15 @@ int main(void)
     gpio_write(BEEP_PORT, BEEP_PIN, false);
     motors_safe_stop();
 
+#if TASK_MODE == 12U
+    run_tasks_1_to_2_by_key();
+#else
     wait_start_key();
 #if TASK_MODE == 2U
     run_task_2();
 #else
     run_task_1();
+#endif
 #endif
 
     while (1) {
