@@ -10,21 +10,25 @@
 #define CD_STRAIGHT_RIGHT_DUTY 60U
 #define CD_ALIGN_LEFT_DUTY 35U
 #define CD_ALIGN_RIGHT_DUTY 72U
-#define CD_ALIGN_MS 380U
+#define CD_ALIGN_MS 900U
 #define LINE_BASE_LEFT_DUTY 38U
 #define LINE_BASE_RIGHT_DUTY 44U
 #define LINE_KP 5
 #define START_IGNORE_MS 1200U
 #define LINE_DETECT_MASK 0xFFU
 #define LINE_DETECT_MIN_COUNT 1U
-#define CD_LINE_DETECT_MASK 0x3CU
+#define CD_LINE_DETECT_MASK 0xFFU
 #define CD_LINE_DETECT_MIN_COUNT 1U
+#define CD_LINE_IGNORE_MS 120U
 #define LINE_DETECT_CONFIRM_MS 1U
 #define STRAIGHT_LEAVE_LINE_IGNORE_MS 500U
 #define ARC_MIN_RUN_MS 800U
 #define ARC_LOST_CONFIRM_MS 120U
 #define ARC_LOST_MASK 0xFFU
 #define ARC_SETTLE_MS 350U
+#define D_ARC_CAPTURE_LEFT_DUTY 32U
+#define D_ARC_CAPTURE_RIGHT_DUTY 62U
+#define D_ARC_CAPTURE_MS 260U
 #define BRAKE_MS 80U
 #define BEEP_HALF_PERIOD_CYCLES (CPUCLK_FREQ / 4000U)
 
@@ -271,8 +275,8 @@ static void active_brake_then_stop(void)
     motors_safe_stop();
 }
 
-static void run_straight_to_line_with_duty(uint8_t leftDuty, uint8_t rightDuty,
-    uint8_t detectMask, uint8_t minCount, bool brakeAtEnd)
+static void run_straight_to_line_with_ignore(uint8_t leftDuty, uint8_t rightDuty,
+    uint8_t detectMask, uint8_t minCount, uint32_t ignoreMs, bool brakeAtEnd)
 {
     uint32_t confirmMs = 0;
 
@@ -281,7 +285,7 @@ static void run_straight_to_line_with_duty(uint8_t leftDuty, uint8_t rightDuty,
     for (uint32_t t = 0; ; t++) {
         uint8_t mask = track_read_mask();
 
-        if ((t > START_IGNORE_MS) && line_detected_with_mask(mask, detectMask, minCount)) {
+        if ((t > ignoreMs) && line_detected_with_mask(mask, detectMask, minCount)) {
             confirmMs++;
         } else {
             confirmMs = 0U;
@@ -301,14 +305,14 @@ static void run_straight_to_line_with_duty(uint8_t leftDuty, uint8_t rightDuty,
 
 static void run_straight_to_line(void)
 {
-    run_straight_to_line_with_duty(STRAIGHT_LEFT_DUTY, STRAIGHT_RIGHT_DUTY,
-        LINE_DETECT_MASK, LINE_DETECT_MIN_COUNT, true);
+    run_straight_to_line_with_ignore(STRAIGHT_LEFT_DUTY, STRAIGHT_RIGHT_DUTY,
+        LINE_DETECT_MASK, LINE_DETECT_MIN_COUNT, START_IGNORE_MS, true);
 }
 
 static void run_cd_straight_to_line(void)
 {
-    run_straight_to_line_with_duty(CD_STRAIGHT_LEFT_DUTY, CD_STRAIGHT_RIGHT_DUTY,
-        CD_LINE_DETECT_MASK, CD_LINE_DETECT_MIN_COUNT, false);
+    run_straight_to_line_with_ignore(CD_STRAIGHT_LEFT_DUTY, CD_STRAIGHT_RIGHT_DUTY,
+        CD_LINE_DETECT_MASK, CD_LINE_DETECT_MIN_COUNT, CD_LINE_IGNORE_MS, true);
 }
 
 static void cd_exit_align_right(void)
@@ -385,6 +389,15 @@ static void run_arc_until_lost(void)
     active_brake_then_stop();
 }
 
+static void capture_d_arc_right(void)
+{
+    motors_forward_dir();
+
+    for (uint32_t t = 0; t < D_ARC_CAPTURE_MS; t++) {
+        pwm_run_1ms(D_ARC_CAPTURE_LEFT_DUTY, D_ARC_CAPTURE_RIGHT_DUTY);
+    }
+}
+
 static void run_task_1(void)
 {
     run_straight_to_line();
@@ -403,6 +416,7 @@ static void run_task_2(void)
     run_cd_straight_to_line();
     notice_pass_point();
     delay_ms(30U);
+    capture_d_arc_right();
     run_arc_until_lost();
     notice_arrived();
 }
