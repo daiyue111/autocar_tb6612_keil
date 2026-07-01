@@ -23,6 +23,7 @@ Listings/
 # Logs
 build.log
 keil/build.log
+build_q34.log
 
 # OS/editor noise
 Thumbs.db

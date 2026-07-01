@@ -22,7 +22,7 @@
   </DaveTm>
 
   <Target>
-    <TargetName>autocar_tb6612</TargetName>
+    <TargetName>autocar_q34_clean</TargetName>
     <ToolsetNumber>0x4</ToolsetNumber>
     <ToolsetName>ARM-ADS</ToolsetName>
     <TargetOption>

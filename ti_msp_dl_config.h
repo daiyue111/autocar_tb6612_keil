@@ -113,6 +113,14 @@ extern "C" {
 #define BEEP_PIN  DL_GPIO_PIN_7
 #define BEEP_IOMUX IOMUX_PINCM14
 
+#define IMU_I2C I2C0
+#define IMU_I2C_ADDR 0x68U
+#define IMU_I2C_ADDR_ALT 0x69U
+#define IMU_SDA_IOMUX IOMUX_PINCM1
+#define IMU_SDA_FUNC IOMUX_PINCM1_PF_I2C0_SDA
+#define IMU_SCL_IOMUX IOMUX_PINCM2
+#define IMU_SCL_FUNC IOMUX_PINCM2_PF_I2C0_SCL
+
 void SYSCFG_DL_init(void);
 
 #ifdef __cplusplus
