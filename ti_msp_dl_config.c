@@ -1,7 +1,8 @@
 #include "ti_msp_dl_config.h"
 
 #define GPIOA_OUTPUT_PINS \
-    (MOTOR_BIN1_PIN | MOTOR_BIN2_PIN | MOTOR_CIN1_PIN | MOTOR_CIN2_PIN)
+    (MOTOR_BIN1_PIN | MOTOR_BIN2_PIN | MOTOR_CIN1_PIN | MOTOR_CIN2_PIN | \
+     BEEP_PIN)
 #define GPIOB_OUTPUT_PINS \
     (MOTOR_STBY_PIN | MOTOR_AIN1_PIN | MOTOR_AIN2_PIN | MOTOR_PWMA_PIN | \
      MOTOR_PWMB_PIN | MOTOR_PWMC_PIN | MOTOR_DIN1_PIN | MOTOR_DIN2_PIN | \
@@ -76,6 +77,7 @@ void SYSCFG_DL_init(void)
     init_output_pin(MOTOR_DIN2_IOMUX);
     init_output_pin(MOTOR_PWMD_IOMUX);
     init_output_pin(LED_IOMUX);
+    init_output_pin(BEEP_IOMUX);
     init_input_pullup_pin(TRACK_X1_IOMUX);
     init_input_pullup_pin(TRACK_X2_IOMUX);
     init_input_pullup_pin(TRACK_X3_IOMUX);

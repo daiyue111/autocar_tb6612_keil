@@ -30,7 +30,7 @@
 #define D_ARC_CAPTURE_RIGHT_DUTY 62U
 #define D_ARC_CAPTURE_MS 340U
 #define BRAKE_MS 80U
-#define BEEP_ENABLE 0U
+#define BEEP_ENABLE 1U
 #define BEEP_OFF_LEVEL true
 #define BEEP_HALF_PERIOD_CYCLES (CPUCLK_FREQ / 4000U)
 
@@ -1288,6 +1288,7 @@ int main(void)
     SYSCFG_DL_init();
     gpio_write(MOTOR_STBY_PORT, MOTOR_STBY_PIN, true);
     gpio_write(LED_PORT, LED_PIN, false);
+    gpio_write(BEEP_PORT, BEEP_PIN, BEEP_OFF_LEVEL);
     motors_safe_stop();
 
 #if TASK_MODE == 99U
