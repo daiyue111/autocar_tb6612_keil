@@ -100,6 +100,7 @@
 static uint8_t gImuAddr = IMU_I2C_ADDR;
 static int32_t gGyroZBias = 0;
 static bool gImuReady = false;
+static bool gLastTurnFallback = false;
 
 static void delay_ms(uint32_t ms)
 {
@@ -206,6 +207,19 @@ static void notice_fail_code(uint8_t code)
         delay_ms(350U);
         gpio_write(LED_PORT, LED_PIN, false);
         delay_ms(350U);
+    }
+}
+
+static void notice_turn_source(void)
+{
+    uint8_t count = gLastTurnFallback ? 2U : 1U;
+
+    delay_ms(120U);
+    for (uint8_t i = 0; i < count; i++) {
+        gpio_write(LED_PORT, LED_PIN, true);
+        delay_ms(220U);
+        gpio_write(LED_PORT, LED_PIN, false);
+        delay_ms(180U);
     }
 }
 
@@ -759,6 +773,7 @@ static uint8_t task3_turn_by_gyro(uint8_t direction, int32_t targetRaw,
         fallbackMs : TASK3_TURN_NO_GYRO_STOP_MS;
 
     if (!gImuReady) {
+        gLastTurnFallback = true;
         task3_open_turn(direction, fallbackMs);
         return 0U;
     }
@@ -797,11 +812,13 @@ static uint8_t task3_turn_by_gyro(uint8_t direction, int32_t targetRaw,
                 delay_ms(30U);
                 task3_open_turn(direction, fallbackMs - elapsedMs);
             }
+            gLastTurnFallback = true;
             return 0U;
         }
         if ((t >= TASK3_TURN_MIN_MS) && (turn >= targetRaw)) {
             active_brake_then_stop();
             delay_ms(TASK3_SETTLE_MS);
+            gLastTurnFallback = false;
             return 0U;
         }
 
@@ -814,6 +831,7 @@ static uint8_t task3_turn_by_gyro(uint8_t direction, int32_t targetRaw,
         if (TASK3_TURN_MAX_MS < fallbackMs) {
             task3_open_turn(direction, fallbackMs - TASK3_TURN_MAX_MS);
         }
+        gLastTurnFallback = true;
         return 0U;
     }
     return 3U;
@@ -1040,7 +1058,17 @@ static void run_task_2(void)
 static bool prepare_imu_or_fail(void)
 {
     motors_safe_stop();
-    if (!gImuReady && !imu_init_for_route()) {
+
+    if (!gImuReady) {
+        for (uint8_t retry = 0; retry < 3U; retry++) {
+            imu_i2c_recover();
+            delay_ms(180U);
+            if (imu_init_for_route()) {
+                return true;
+            }
+            delay_ms(220U);
+        }
+
         notice_fail_code(2U);
         return false;
     }
@@ -1072,6 +1100,7 @@ static bool run_task_3_core(bool noticeDone)
         notice_fail_code(turnStatus);
         return false;
     }
+    notice_turn_source();
     if (!task3_heading_to_line(TASK3_FIND_LINE_IGNORE_MS, 60U)) {
         notice_fail_code(4U);
         return false;
@@ -1102,6 +1131,7 @@ static bool run_task_3_core(bool noticeDone)
         notice_fail_code(turnStatus);
         return false;
     }
+    notice_turn_source();
     if (!task3_heading_to_line(TASK3_BD_FIND_LINE_IGNORE_MS, 60U)) {
         notice_fail_code(4U);
         return false;
