@@ -64,7 +64,7 @@
 #define TASK3_TURN_MAX_MS 3000U
 #define TASK3_SETTLE_MS 120U
 #define TASK3_POINT_DELAY_MS 80U
-#define TASK3_A_TO_AC_TURN_RAW 1650000
+#define TASK3_A_TO_AC_TURN_RAW 2100000
 #define TASK3_C_TO_CB_TURN_RAW 100000
 #define TASK3_B_TO_BD_TURN_RAW 400000
 #define TASK3_D_TO_DA_TURN_RAW 70000
@@ -1198,10 +1198,24 @@ static bool prepare_imu_or_fail(void)
     return true;
 }
 
-static bool task3_rebias_or_fail(void)
+static bool task3_recover_imu_after_point(void)
 {
     active_brake_then_stop();
-    delay_ms(TASK3_SETTLE_MS);
+    delay_ms(250U);
+    gImuReady = false;
+    imu_i2c_recover();
+    delay_ms(150U);
+
+    return imu_init_for_route();
+}
+
+static bool task3_rebias_or_fail(void)
+{
+    if (!task3_recover_imu_after_point()) {
+        notice_fail_code(TURN_STATUS_NO_READS);
+        return false;
+    }
+
     return true;
 }
 
@@ -1227,14 +1241,14 @@ static bool run_task_3_core(bool noticeDone)
     notice_pass_point();
     delay_ms(TASK3_POINT_DELAY_MS);
 
-    if (!task3_rebias_or_fail()) {
-        return false;
-    }
-    turnStatus = task3_turn_by_gyro(TASK3_TURN_LEFT, TASK3_C_TO_CB_TURN_RAW,
-        TASK3_C_TO_CB_OPEN_TURN_MS);
-    if (turnStatus != 0U) {
-        notice_fail_code(turnStatus);
-        return false;
+    if (task3_recover_imu_after_point()) {
+        turnStatus = task3_turn_by_gyro(TASK3_TURN_LEFT, TASK3_C_TO_CB_TURN_RAW,
+            TASK3_C_TO_CB_OPEN_TURN_MS);
+        if (turnStatus != 0U) {
+            task3_open_turn(TASK3_TURN_LEFT, TASK3_C_TO_CB_OPEN_TURN_MS);
+        }
+    } else {
+        task3_open_turn(TASK3_TURN_LEFT, TASK3_C_TO_CB_OPEN_TURN_MS);
     }
     task3_capture_line();
     task3_follow_arc_until_lost(false);
