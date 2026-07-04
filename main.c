@@ -242,6 +242,16 @@ static void notice_turn_source(void)
     }
 }
 
+static void notice_quick_code(uint8_t code)
+{
+    for (uint8_t i = 0; i < code; i++) {
+        gpio_write(LED_PORT, LED_PIN, true);
+        delay_ms(80U);
+        gpio_write(LED_PORT, LED_PIN, false);
+        delay_ms(80U);
+    }
+}
+
 static void notice_task_selected(uint8_t task)
 {
     for (uint8_t i = 0; i < task; i++) {
@@ -1041,8 +1051,8 @@ static void task3_cb_follow_step(uint8_t mask, int16_t *lastError)
 
     if ((mask & 0x03U) != 0U) {
         *lastError = -7;
-        leftDuty = 78U;
-        rightDuty = 8U;
+        leftDuty = 62U;
+        rightDuty = 10U;
     } else if ((mask & 0xC0U) != 0U) {
         *lastError = 7;
         leftDuty = 28U;
@@ -1055,11 +1065,11 @@ static void task3_cb_follow_step(uint8_t mask, int16_t *lastError)
         leftDuty = clamp_duty((int32_t)TASK3_CB_BASE_LEFT_DUTY - correction);
         rightDuty = clamp_duty((int32_t)TASK3_CB_BASE_RIGHT_DUTY + correction);
     } else if (*lastError < 0) {
-        leftDuty = 76U;
-        rightDuty = 8U;
+        leftDuty = 60U;
+        rightDuty = 10U;
     } else if (*lastError > 0) {
         leftDuty = 24U;
-        rightDuty = 48U;
+        rightDuty = 40U;
     } else {
         leftDuty = TASK3_CB_BASE_LEFT_DUTY;
         rightDuty = TASK3_CB_BASE_RIGHT_DUTY;
@@ -1201,10 +1211,10 @@ static bool prepare_imu_or_fail(void)
 static bool task3_recover_imu_after_point(void)
 {
     active_brake_then_stop();
-    delay_ms(250U);
+    delay_ms(450U);
     gImuReady = false;
     imu_i2c_recover();
-    delay_ms(150U);
+    delay_ms(250U);
 
     return imu_init_for_route();
 }
@@ -1255,16 +1265,19 @@ static bool run_task_3_core(bool noticeDone)
     notice_pass_point();
     delay_ms(TASK3_POINT_DELAY_MS);
 
-    if (!task3_rebias_or_fail()) {
-        return false;
+    if (task3_recover_imu_after_point()) {
+        turnStatus = task3_turn_by_gyro(TASK3_TURN_LEFT, TASK3_B_TO_BD_TURN_RAW,
+            TASK3_B_TO_BD_OPEN_TURN_MS);
+        if (turnStatus != 0U) {
+            task3_open_turn(TASK3_TURN_LEFT, TASK3_B_TO_BD_OPEN_TURN_MS);
+            notice_quick_code(2U);
+        } else {
+            notice_quick_code(1U);
+        }
+    } else {
+        task3_open_turn(TASK3_TURN_LEFT, TASK3_B_TO_BD_OPEN_TURN_MS);
+        notice_quick_code(2U);
     }
-    turnStatus = task3_turn_by_gyro(TASK3_TURN_LEFT, TASK3_B_TO_BD_TURN_RAW,
-        TASK3_B_TO_BD_OPEN_TURN_MS);
-    if (turnStatus != 0U) {
-        notice_fail_code(turnStatus);
-        return false;
-    }
-    notice_turn_source();
     if (!task3_heading_to_line(TASK3_BD_FIND_LINE_IGNORE_MS, 60U)) {
         notice_fail_code(4U);
         return false;
