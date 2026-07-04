@@ -2,7 +2,7 @@
 
 #define TRACK_BLACK_IS_HIGH 0U
 
-#define TASK_MODE 3U
+#define TASK_MODE 4U
 
 #define STRAIGHT_LEFT_DUTY 53U
 #define STRAIGHT_RIGHT_DUTY 60U
@@ -70,7 +70,7 @@
 #define TASK3_A_TO_AC_TURN_RAW 1850000
 #define TASK3_C_TO_CB_TURN_RAW 1050000
 #define TASK3_B_TO_BD_TURN_RAW 2550000
-#define TASK3_D_TO_DA_TURN_RAW 550000
+#define TASK3_D_TO_DA_TURN_RAW 700000
 #define TASK3_A_TO_AC_OPEN_TURN_MS 480U
 #define TASK3_C_TO_CB_OPEN_TURN_MS 360U
 #define TASK3_B_TO_BD_OPEN_TURN_MS 360U
@@ -91,14 +91,15 @@
 #define TASK3_CB_BASE_LEFT_DUTY 44U
 #define TASK3_CB_BASE_RIGHT_DUTY 20U
 #define TASK3_CB_KP 7
-#define TASK3_DA_BASE_LEFT_DUTY 32U
-#define TASK3_DA_BASE_RIGHT_DUTY 15U
-#define TASK3_DA_KP 9
+#define TASK3_DA_BASE_LEFT_DUTY 29U
+#define TASK3_DA_BASE_RIGHT_DUTY 14U
+#define TASK3_DA_KP 11
 #define TASK3_CB_ARC_MIN_MS 800U
-#define TASK3_DA_ARC_MIN_MS 1200U
+#define TASK3_DA_ARC_MIN_MS 2600U
 #define TASK3_CB_ARC_LOST_CONFIRM_MS 40U
-#define TASK3_DA_ARC_LOST_CONFIRM_MS 360U
+#define TASK3_DA_ARC_LOST_CONFIRM_MS 520U
 #define TASK3_DA_CAPTURE_MS 820U
+#define TASK4_A_TO_AC_TURN_RAW 2720000
 #define TURN_STATUS_GYRO 1U
 #define TURN_STATUS_NO_READS 3U
 #define TURN_STATUS_TIMEOUT 4U
@@ -1302,6 +1303,12 @@ static void task3_follow_arc_until_lost(bool rightArc)
             break;
         }
 
+        if (rightArc && (lostMs > 0U)) {
+            motors_pwm_off();
+            delay_ms(1U);
+            continue;
+        }
+
         if (rightArc) {
             task3_da_follow_step(mask, &lastError);
         } else {
@@ -1396,7 +1403,7 @@ static bool task3_rebias_or_fail(void)
     return true;
 }
 
-static bool run_task_3_core(bool noticeDone)
+static bool run_task_3_core(bool noticeDone, int32_t aToAcTurnRaw)
 {
     uint8_t turnStatus;
 
@@ -1404,7 +1411,7 @@ static bool run_task_3_core(bool noticeDone)
         return false;
     }
 
-    turnStatus = task3_turn_by_gyro(TASK3_TURN_RIGHT, TASK3_A_TO_AC_TURN_RAW,
+    turnStatus = task3_turn_by_gyro(TASK3_TURN_RIGHT, aToAcTurnRaw,
         TASK3_A_TO_AC_OPEN_TURN_MS);
     if (turnStatus != 0U) {
         notice_fail_code(turnStatus);
@@ -1473,7 +1480,7 @@ static bool run_task_3_core(bool noticeDone)
 
 static void run_task_3(void)
 {
-    (void)run_task_3_core(true);
+    (void)run_task_3_core(true, TASK3_A_TO_AC_TURN_RAW);
 }
 
 static void run_task_4(void)
@@ -1483,8 +1490,14 @@ static void run_task_4(void)
     }
 
     for (uint8_t lap = 0; lap < 4U; lap++) {
-        if (!run_task_3_core(false)) {
+        int32_t aTurnRaw = (lap == 0U) ? TASK3_A_TO_AC_TURN_RAW :
+            TASK4_A_TO_AC_TURN_RAW;
+
+        if (!run_task_3_core(false, aTurnRaw)) {
             return;
+        }
+        if ((lap == 1U) || (lap == 2U)) {
+            notice_pass_point();
         }
         delay_ms(120U);
     }
