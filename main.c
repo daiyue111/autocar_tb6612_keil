@@ -36,6 +36,7 @@
 
 #define PWM_PERIOD_TICKS 200U
 #define I2C_TIMEOUT_CYCLES 40000U
+#define SPI_TIMEOUT_CYCLES 40000U
 #define IMU_WHO_AM_I_REG 0x75U
 #define IMU_WHO_AM_I_EXPECTED 0x47U
 #define IMU_DEVICE_CONFIG 0x11U
@@ -52,6 +53,8 @@
 #define IMU_FAST_REBIAS_SETTLE_MS 220U
 #define IMU_FAST_REBIAS_SAMPLES 24U
 #define IMU_FAST_REBIAS_SAMPLE_MS 4U
+#define IMU_SPI_TEST_MS 8000U
+#define IMU_SPI_TEST_DEADBAND_RAW 500
 
 #define TASK3_TURN_LEFT 0U
 #define TASK3_TURN_RIGHT 1U
@@ -64,10 +67,10 @@
 #define TASK3_TURN_MAX_MS 3000U
 #define TASK3_SETTLE_MS 120U
 #define TASK3_POINT_DELAY_MS 80U
-#define TASK3_A_TO_AC_TURN_RAW 2100000
-#define TASK3_C_TO_CB_TURN_RAW 100000
-#define TASK3_B_TO_BD_TURN_RAW 400000
-#define TASK3_D_TO_DA_TURN_RAW 70000
+#define TASK3_A_TO_AC_TURN_RAW 1850000
+#define TASK3_C_TO_CB_TURN_RAW 1050000
+#define TASK3_B_TO_BD_TURN_RAW 2550000
+#define TASK3_D_TO_DA_TURN_RAW 550000
 #define TASK3_A_TO_AC_OPEN_TURN_MS 480U
 #define TASK3_C_TO_CB_OPEN_TURN_MS 360U
 #define TASK3_B_TO_BD_OPEN_TURN_MS 360U
@@ -88,12 +91,12 @@
 #define TASK3_CB_BASE_LEFT_DUTY 44U
 #define TASK3_CB_BASE_RIGHT_DUTY 20U
 #define TASK3_CB_KP 7
-#define TASK3_DA_BASE_LEFT_DUTY 34U
-#define TASK3_DA_BASE_RIGHT_DUTY 16U
+#define TASK3_DA_BASE_LEFT_DUTY 32U
+#define TASK3_DA_BASE_RIGHT_DUTY 15U
 #define TASK3_DA_KP 9
 #define TASK3_CB_ARC_MIN_MS 800U
 #define TASK3_DA_ARC_MIN_MS 1200U
-#define TASK3_CB_ARC_LOST_CONFIRM_MS 140U
+#define TASK3_CB_ARC_LOST_CONFIRM_MS 40U
 #define TASK3_DA_ARC_LOST_CONFIRM_MS 360U
 #define TASK3_DA_CAPTURE_MS 820U
 #define TURN_STATUS_GYRO 1U
@@ -114,6 +117,8 @@ static bool gImuReady = false;
 static uint8_t gLastTurnStatus = TURN_STATUS_GYRO;
 
 static uint8_t task3_turn_loop_clean(int32_t targetRaw);
+static bool imu_spi_read_i16(uint8_t regHigh, int16_t *value);
+static bool imu_spi_start_gyro(void);
 
 static void delay_ms(uint32_t ms)
 {
@@ -633,30 +638,211 @@ static bool imu_read_gyro_z(int16_t *gz)
     if (!gImuReady) {
         return false;
     }
-    return imu_read_i16_addr(gImuAddr, IMU_GYRO_DATA_Z1, gz);
+    return imu_spi_read_i16(IMU_GYRO_DATA_Z1, gz);
 }
 
 static bool imu_read_gyro_axis_turn(uint8_t regHigh, int16_t *value)
 {
-    uint8_t high = 0U;
-
     if (!gImuReady) {
         return false;
     }
-    if (imu_read_i16_burst_addr(gImuAddr, regHigh, value)) {
-        return true;
-    }
-    if (!imu_read_reg_addr(gImuAddr, regHigh, &high)) {
-        return false;
-    }
-
-    *value = (int16_t)((int16_t)((int8_t)high) << 8);
-    return true;
+    return imu_spi_read_i16(regHigh, value);
 }
 
 static bool imu_read_gyro_z_turn(int16_t *gz)
 {
     return imu_read_gyro_axis_turn(IMU_GYRO_DATA_Z1, gz);
+}
+
+static bool spi_transfer_byte(uint8_t tx, uint8_t *rx)
+{
+    while (!DL_SPI_isRXFIFOEmpty(IMU_SPI)) {
+        (void) DL_SPI_receiveData8(IMU_SPI);
+    }
+
+    for (uint32_t t = 0; t < SPI_TIMEOUT_CYCLES; t++) {
+        if (!DL_SPI_isTXFIFOFull(IMU_SPI)) {
+            DL_SPI_transmitData8(IMU_SPI, tx);
+            break;
+        }
+        if (t == (SPI_TIMEOUT_CYCLES - 1U)) {
+            return false;
+        }
+    }
+
+    for (uint32_t t = 0; t < SPI_TIMEOUT_CYCLES; t++) {
+        if (!DL_SPI_isRXFIFOEmpty(IMU_SPI)) {
+            *rx = DL_SPI_receiveData8(IMU_SPI);
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static bool imu_spi_read_reg(uint8_t reg, uint8_t *value)
+{
+    uint8_t dummy = 0U;
+
+    gpio_write(IMU_SPI_CS_PORT, IMU_SPI_CS_PIN, false);
+    delay_cycles(8U);
+
+    if (!spi_transfer_byte((uint8_t)(reg | 0x80U), &dummy) ||
+        !spi_transfer_byte(0x00U, value)) {
+        gpio_write(IMU_SPI_CS_PORT, IMU_SPI_CS_PIN, true);
+        return false;
+    }
+
+    while (DL_SPI_isBusy(IMU_SPI)) {
+    }
+    delay_cycles(8U);
+    gpio_write(IMU_SPI_CS_PORT, IMU_SPI_CS_PIN, true);
+    return true;
+}
+
+static bool imu_spi_write_reg(uint8_t reg, uint8_t value)
+{
+    uint8_t dummy = 0U;
+
+    gpio_write(IMU_SPI_CS_PORT, IMU_SPI_CS_PIN, false);
+    delay_cycles(8U);
+
+    if (!spi_transfer_byte((uint8_t)(reg & 0x7FU), &dummy) ||
+        !spi_transfer_byte(value, &dummy)) {
+        gpio_write(IMU_SPI_CS_PORT, IMU_SPI_CS_PIN, true);
+        return false;
+    }
+
+    while (DL_SPI_isBusy(IMU_SPI)) {
+    }
+    delay_cycles(8U);
+    gpio_write(IMU_SPI_CS_PORT, IMU_SPI_CS_PIN, true);
+    return true;
+}
+
+static bool imu_spi_read_i16(uint8_t regHigh, int16_t *value)
+{
+    uint8_t high = 0U;
+    uint8_t low = 0U;
+
+    if (!imu_spi_read_reg(regHigh, &high) ||
+        !imu_spi_read_reg((uint8_t)(regHigh + 1U), &low)) {
+        return false;
+    }
+
+    *value = (int16_t)(((uint16_t)high << 8) | low);
+    return true;
+}
+
+static bool imu_spi_start_gyro(void)
+{
+    uint8_t who = 0U;
+
+    delay_ms(120U);
+    if (!imu_spi_read_reg(IMU_WHO_AM_I_REG, &who) ||
+        (who != IMU_WHO_AM_I_EXPECTED)) {
+        return false;
+    }
+    if (!imu_spi_write_reg(IMU_REG_BANK_SEL, 0x00U)) {
+        return false;
+    }
+    if (!imu_spi_write_reg(IMU_GYRO_CONFIG0, 0x06U)) {
+        return false;
+    }
+    if (!imu_spi_write_reg(IMU_PWR_MGMT0, 0x0FU)) {
+        return false;
+    }
+    delay_ms(200U);
+    return true;
+}
+
+static void run_imu_spi_whoami_test(void)
+{
+    uint8_t goodReads = 0U;
+    uint8_t wrongReads = 0U;
+
+    motors_safe_stop();
+    for (uint8_t i = 0; i < 10U; i++) {
+        uint8_t who = 0U;
+
+        if (imu_spi_read_reg(IMU_WHO_AM_I_REG, &who)) {
+            if (who == IMU_WHO_AM_I_EXPECTED) {
+                goodReads++;
+            } else if ((who != 0x00U) && (who != 0xFFU)) {
+                wrongReads++;
+            }
+        }
+        delay_ms(20U);
+    }
+
+    if (goodReads >= 3U) {
+        notice_quick_code(1U);
+    } else if (wrongReads > 0U) {
+        notice_quick_code(4U);
+    } else {
+        notice_quick_code(3U);
+    }
+}
+
+static void run_imu_spi_gyro_test(void)
+{
+    int32_t sum = 0;
+    int32_t bias = 0;
+    uint8_t count = 0U;
+    uint8_t failCount = 0U;
+
+    motors_safe_stop();
+    if (!imu_spi_start_gyro()) {
+        notice_quick_code(3U);
+        return;
+    }
+    notice_quick_code(1U);
+
+    for (uint8_t i = 0; i < 32U; i++) {
+        int16_t gz = 0;
+
+        if (imu_spi_read_i16(IMU_GYRO_DATA_Z1, &gz)) {
+            sum += gz;
+            count++;
+        } else {
+            failCount++;
+        }
+        delay_ms(5U);
+    }
+    if (count == 0U) {
+        notice_quick_code(3U);
+        return;
+    }
+    bias = sum / (int32_t)count;
+
+    for (uint32_t t = 0; t < IMU_SPI_TEST_MS; t += 10U) {
+        int16_t gz = 0;
+        int32_t delta = 0;
+
+        if (!imu_spi_read_i16(IMU_GYRO_DATA_Z1, &gz)) {
+            failCount++;
+            gpio_write(LED_PORT, LED_PIN, false);
+            delay_ms(10U);
+            continue;
+        }
+
+        delta = (int32_t)gz - bias;
+        if (delta > IMU_SPI_TEST_DEADBAND_RAW) {
+            gpio_write(LED_PORT, LED_PIN, true);
+        } else if (delta < -IMU_SPI_TEST_DEADBAND_RAW) {
+            gpio_write(LED_PORT, LED_PIN, ((t / 80U) & 1U) != 0U);
+        } else {
+            gpio_write(LED_PORT, LED_PIN, false);
+        }
+        delay_ms(10U);
+    }
+
+    gpio_write(LED_PORT, LED_PIN, false);
+    if (failCount > 5U) {
+        notice_quick_code(3U);
+    } else {
+        notice_quick_code(1U);
+    }
 }
 
 static bool imu_read_turn_sample_abs(int32_t *sample)
@@ -712,33 +898,14 @@ static bool imu_rebias_gyro_z_fast(void)
     }
 
     gGyroZBias = sum / (int32_t)count;
+    gGyroZBiasValid = true;
     return true;
 }
 
 static bool imu_init_for_route(void)
 {
-    uint8_t addr = IMU_I2C_ADDR;
-    bool detected = false;
-
     delay_ms(300U);
-    for (uint8_t retry = 0; retry < 5U; retry++) {
-        if (imu_detect_addr(&addr)) {
-            detected = true;
-            break;
-        }
-        delay_ms(120U);
-    }
-
-    if (!detected) {
-        gImuReady = false;
-        return false;
-    }
-
-    gImuAddr = addr;
-    imu_write_reg_addr(gImuAddr, IMU_DEVICE_CONFIG, 0x01U);
-    delay_ms(120U);
-
-    if (!imu_start_motion_sensors(gImuAddr)) {
+    if (!imu_spi_start_gyro()) {
         gImuReady = false;
         return false;
     }
@@ -1256,9 +1423,13 @@ static bool run_task_3_core(bool noticeDone)
             TASK3_C_TO_CB_OPEN_TURN_MS);
         if (turnStatus != 0U) {
             task3_open_turn(TASK3_TURN_LEFT, TASK3_C_TO_CB_OPEN_TURN_MS);
+            notice_quick_code(2U);
+        } else {
+            notice_quick_code(1U);
         }
     } else {
         task3_open_turn(TASK3_TURN_LEFT, TASK3_C_TO_CB_OPEN_TURN_MS);
+        notice_quick_code(2U);
     }
     task3_capture_line();
     task3_follow_arc_until_lost(false);
@@ -1472,6 +1643,12 @@ int main(void)
 
 #if TASK_MODE == 99U
     run_selected_task_once();
+#elif TASK_MODE == 50U
+    wait_start_key();
+    run_imu_spi_whoami_test();
+#elif TASK_MODE == 51U
+    wait_start_key();
+    run_imu_spi_gyro_test();
 #elif TASK_MODE == 12U
     run_tasks_1_to_2_by_key();
 #elif TASK_MODE == 34U

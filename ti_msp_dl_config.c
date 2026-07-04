@@ -2,7 +2,7 @@
 
 #define GPIOA_OUTPUT_PINS \
     (MOTOR_BIN1_PIN | MOTOR_BIN2_PIN | MOTOR_CIN1_PIN | MOTOR_CIN2_PIN | \
-     BEEP_PIN)
+     BEEP_PIN | IMU_SPI_CS_PIN)
 #define GPIOB_OUTPUT_PINS \
     (MOTOR_STBY_PIN | MOTOR_AIN1_PIN | MOTOR_AIN2_PIN | MOTOR_PWMA_PIN | \
      MOTOR_PWMB_PIN | MOTOR_PWMC_PIN | MOTOR_DIN1_PIN | MOTOR_DIN2_PIN | \
@@ -52,6 +52,41 @@ static void init_imu_i2c(void)
     DL_I2C_enableController(IMU_I2C);
 }
 
+static void init_imu_spi(void)
+{
+    DL_SPI_Config config = {
+        .mode = DL_SPI_MODE_CONTROLLER,
+        .frameFormat = DL_SPI_FRAME_FORMAT_MOTO4_POL0_PHA0,
+        .parity = DL_SPI_PARITY_NONE,
+        .dataSize = DL_SPI_DATA_SIZE_8,
+        .bitOrder = DL_SPI_BIT_ORDER_MSB_FIRST,
+        .chipSelectPin = DL_SPI_CHIP_SELECT_0,
+    };
+    DL_SPI_ClockConfig clockConfig = {
+        .clockSel = DL_SPI_CLOCK_BUSCLK,
+        .divideRatio = DL_SPI_CLOCK_DIVIDE_RATIO_1,
+    };
+
+    init_output_pin(IMU_SPI_CS_IOMUX);
+    DL_GPIO_initPeripheralOutputFunction(IMU_SPI_SCLK_IOMUX,
+        IMU_SPI_SCLK_FUNC);
+    DL_GPIO_initPeripheralOutputFunction(IMU_SPI_PICO_IOMUX,
+        IMU_SPI_PICO_FUNC);
+    DL_GPIO_initPeripheralInputFunction(IMU_SPI_POCI_IOMUX,
+        IMU_SPI_POCI_FUNC);
+
+    DL_SPI_reset(IMU_SPI);
+    DL_SPI_enablePower(IMU_SPI);
+    delay_cycles(16);
+
+    DL_SPI_init(IMU_SPI, &config);
+    DL_SPI_setClockConfig(IMU_SPI, &clockConfig);
+    DL_SPI_setBitRateSerialClockDivider(IMU_SPI, 31U);
+    DL_SPI_setFIFOThreshold(IMU_SPI, DL_SPI_RX_FIFO_LEVEL_ONE_FRAME,
+        DL_SPI_TX_FIFO_LEVEL_ONE_FRAME);
+    DL_SPI_enable(IMU_SPI);
+}
+
 void SYSCFG_DL_init(void)
 {
     DL_GPIO_reset(GPIOA);
@@ -88,10 +123,12 @@ void SYSCFG_DL_init(void)
     init_input_pullup_pin(TRACK_X8_IOMUX);
     init_key_pullup_pin(KEY_START_IOMUX);
     init_imu_i2c();
+    init_imu_spi();
 
     DL_GPIO_clearPins(GPIOA, GPIOA_OUTPUT_PINS);
     DL_GPIO_clearPins(GPIOB, GPIOB_OUTPUT_PINS);
     DL_GPIO_enableOutput(GPIOA, GPIOA_OUTPUT_PINS);
     DL_GPIO_enableOutput(GPIOB, GPIOB_OUTPUT_PINS);
+    DL_GPIO_setPins(IMU_SPI_CS_PORT, IMU_SPI_CS_PIN);
 
 }
