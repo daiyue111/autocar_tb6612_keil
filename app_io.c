@@ -1,6 +1,6 @@
 #include "app_io.h"
 
-#define BEEP_ENABLE 0U
+#define BEEP_ENABLE 1U
 #define BEEP_OFF_LEVEL true
 #define BEEP_HALF_PERIOD_CYCLES (CPUCLK_FREQ / 4000U)
 
