@@ -252,6 +252,7 @@ bool task3_run_one_lap_with_a_turn(int32_t aToAcTurnRaw)
         app_led_blink(4U);
         return false;
     }
+    app_beep_short();
     app_led_blink(1U);
 
     app_delay_ms(120U);
@@ -260,6 +261,7 @@ bool task3_run_one_lap_with_a_turn(int32_t aToAcTurnRaw)
         app_led_blink(3U);
         return false;
     }
+    app_beep_short();
     app_led_blink(1U);
 
     app_delay_ms(120U);
@@ -269,6 +271,7 @@ bool task3_run_one_lap_with_a_turn(int32_t aToAcTurnRaw)
         app_led_blink(3U);
         return false;
     }
+    app_beep_short();
     app_led_blink(1U);
 
     app_delay_ms(120U);
@@ -277,6 +280,7 @@ bool task3_run_one_lap_with_a_turn(int32_t aToAcTurnRaw)
         app_led_blink(4U);
         return false;
     }
+    app_beep_short();
     app_led_blink(1U);
 
     app_delay_ms(120U);
@@ -285,6 +289,7 @@ bool task3_run_one_lap_with_a_turn(int32_t aToAcTurnRaw)
         app_led_blink(3U);
         return false;
     }
+    app_beep_short();
     app_led_blink(1U);
 
     app_delay_ms(120U);
@@ -294,6 +299,7 @@ bool task3_run_one_lap_with_a_turn(int32_t aToAcTurnRaw)
         app_led_blink(3U);
         return false;
     }
+    app_beep_short();
     app_led_blink(1U);
     return true;
 }
