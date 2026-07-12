@@ -5,8 +5,8 @@
 #include "motor.h"
 #include "track.h"
 
-#define TASK3_A_TO_AC_TURN_RAW 1340000
-#define TASK3_B_TO_BD_TURN_RAW 1830000
+#define TASK3_A_TO_AC_TURN_RAW 1310000
+#define TASK3_B_TO_BD_TURN_RAW 1650000
 #define TASK3_TURN_DUTY 26U
 #define TASK3_TURN_KICK_DUTY 32U
 #define TASK3_TURN_KICK_MS 30U
@@ -31,13 +31,12 @@
 
 #define TASK3_C_ALIGN_LEFT_DUTY 20U
 #define TASK3_C_ALIGN_LEFT_MS 150U
-#define TASK3_D_ALIGN_RIGHT_DUTY 20U
-#define TASK3_D_ALIGN_RIGHT_MS 185U
-#define TASK3_ARC_LEFT_DUTY 18U
-#define TASK3_ARC_RIGHT_DUTY 20U
-#define TASK3_ARC_KP 5
+#define TASK3_D_TO_DA_ALIGN_RAW 950000
+#define TASK3_ARC_LEFT_DUTY 17U
+#define TASK3_ARC_RIGHT_DUTY 19U
+#define TASK3_ARC_KP 6
 #define TASK3_ARC_MIN_MS 1200U
-#define TASK3_ARC_LOST_CONFIRM_MS 50U
+#define TASK3_ARC_LOST_CONFIRM_MS 80U
 #define TASK3_ARC_MAX_MS 15000U
 
 static int32_t abs_i32(int32_t value)
@@ -202,12 +201,9 @@ static void align_left_before_cb(void)
     motor_short_brake_ms(60U);
 }
 
-static void align_right_before_da(void)
+static bool align_right_before_da(void)
 {
-    for (uint32_t t = 0U; t < TASK3_D_ALIGN_RIGHT_MS; t++) {
-        motor_spin_right_pwm_1ms(TASK3_D_ALIGN_RIGHT_DUTY);
-    }
-    motor_short_brake_ms(60U);
+    return turn_right_by_gyro(TASK3_D_TO_DA_ALIGN_RAW);
 }
 
 static bool follow_arc_to_point(void)
@@ -293,7 +289,11 @@ bool task3_run_one_lap_with_a_turn(int32_t aToAcTurnRaw)
     app_led_blink(1U);
 
     app_delay_ms(120U);
-    align_right_before_da();
+
+    if (!align_right_before_da()) {
+        app_led_blink(4U);
+        return false;
+    }
 
     if (!follow_arc_to_point()) {
         app_led_blink(3U);
