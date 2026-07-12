@@ -5,7 +5,7 @@
 #include "motor.h"
 #include "track.h"
 
-#define TASK3_A_TO_AC_TURN_RAW 1310000
+#define TASK3_A_TO_AC_TURN_RAW 1280000
 #define TASK3_B_TO_BD_TURN_RAW 1650000
 #define TASK3_TURN_DUTY 26U
 #define TASK3_TURN_KICK_DUTY 32U

@@ -5,7 +5,7 @@
 #include "task3.h"
 
 #define TASK4_TEST_LAPS 4U
-#define TASK4_FIRST_A_TURN_RAW 1340000
+#define TASK4_FIRST_A_TURN_RAW 1310000
 #define TASK4_REPEAT_A_TURN_RAW 1850000
 
 void task4_run(void)
