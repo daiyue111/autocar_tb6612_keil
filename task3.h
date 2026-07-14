@@ -5,6 +5,7 @@
 
 void task3_run(void);
 bool task3_run_one_lap(void);
-bool task3_run_one_lap_with_a_turn(int32_t aToAcTurnRaw);
+bool task3_run_one_lap_with_turns(int32_t aToAcTurnRaw,
+    int32_t bToBdTurnRaw);
 
 #endif

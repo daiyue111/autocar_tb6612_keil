@@ -6,7 +6,7 @@
 #include "track.h"
 
 #define TASK3_A_TO_AC_TURN_RAW 1280000
-#define TASK3_B_TO_BD_TURN_RAW 1650000
+#define TASK3_B_TO_BD_TURN_RAW 1610000
 #define TASK3_TURN_DUTY 26U
 #define TASK3_TURN_KICK_DUTY 32U
 #define TASK3_TURN_KICK_MS 30U
@@ -242,7 +242,8 @@ static bool follow_arc_to_point(void)
     return false;
 }
 
-bool task3_run_one_lap_with_a_turn(int32_t aToAcTurnRaw)
+bool task3_run_one_lap_with_turns(int32_t aToAcTurnRaw,
+    int32_t bToBdTurnRaw)
 {
     if (!turn_right_by_gyro(aToAcTurnRaw)) {
         app_led_blink(4U);
@@ -272,7 +273,7 @@ bool task3_run_one_lap_with_a_turn(int32_t aToAcTurnRaw)
 
     app_delay_ms(120U);
 
-    if (!turn_left_by_gyro(TASK3_B_TO_BD_TURN_RAW)) {
+    if (!turn_left_by_gyro(bToBdTurnRaw)) {
         app_led_blink(4U);
         return false;
     }
@@ -306,7 +307,8 @@ bool task3_run_one_lap_with_a_turn(int32_t aToAcTurnRaw)
 
 bool task3_run_one_lap(void)
 {
-    return task3_run_one_lap_with_a_turn(TASK3_A_TO_AC_TURN_RAW);
+    return task3_run_one_lap_with_turns(TASK3_A_TO_AC_TURN_RAW,
+        TASK3_B_TO_BD_TURN_RAW);
 }
 
 void task3_run(void)
