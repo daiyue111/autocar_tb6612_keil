@@ -5,6 +5,7 @@
 
 void imu_bus_prepare(void);
 bool imu_init_gyro_z(void);
+bool imu_recalibrate_gyro_z_bias(void);
 bool imu_read_gyro_z_delta(int32_t *delta);
 uint8_t imu_get_error(void);
 void imu_heading_reset(void);

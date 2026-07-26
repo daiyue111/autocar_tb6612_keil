@@ -19,8 +19,12 @@ typedef struct {
     uint16_t cornerClearMs;
     uint16_t cornerDebounceMs;
     uint16_t turnSettleMs;
+    uint16_t offsetLineLostMs;
     uint8_t imuPeriodMs;
     bool startCornerCleared;
+    bool offsetZeroCaptured;
+    int32_t offsetStartLeftCount;
+    int32_t offsetStartRightCount;
     LineSpeedController lineControl;
     ChassisCalibrationRecord record;
 } ChassisCalibration;
@@ -141,14 +145,27 @@ static void start_offset(void)
     motion_control_reset();
     motion_control_enable(true);
     line_speed_control_reset(&gCalibration.lineControl);
+    gCalibration.offsetLineLostMs = 0U;
+    gCalibration.offsetZeroCaptured = false;
+    gCalibration.offsetStartLeftCount = 0;
+    gCalibration.offsetStartRightCount = 0;
     set_state(CAL_STATE_OFFSET_RUNNING);
 }
 
 static void finish_offset(void)
 {
-    int32_t left = motion_control_get_left_count();
-    int32_t right = motion_control_get_right_count();
-    uint32_t averageCounts = (uint32_t)((abs_i32(left) +
+    int32_t left;
+    int32_t right;
+    uint32_t averageCounts;
+
+    if (!gCalibration.offsetZeroCaptured) {
+        return;
+    }
+    left = motion_control_get_left_count() -
+        gCalibration.offsetStartLeftCount;
+    right = motion_control_get_right_count() -
+        gCalibration.offsetStartRightCount;
+    averageCounts = (uint32_t)((abs_i32(left) +
         abs_i32(right)) / 2);
 
     stop_motion();
@@ -264,6 +281,9 @@ static bool update_imu_heading(void)
 static void update_turn(void)
 {
     int16_t direction = (SQUARE_TURN_DIRECTION < 0) ? -1 : 1;
+    int16_t turnSpeed = (gCalibration.stateMs <=
+        CAL_TURN_START_BOOST_MS) ? CAL_TURN_START_SPEED_TICKS :
+        CAL_TURN_SPEED_TICKS;
     int32_t heading = imu_heading_get_mdeg();
 
     if (!update_imu_heading()) {
@@ -287,8 +307,8 @@ static void update_turn(void)
         return;
     }
     motion_control_set_speed_targets(
-        (int16_t)(-direction * CAL_TURN_SPEED_TICKS),
-        (int16_t)(direction * CAL_TURN_SPEED_TICKS));
+        (int16_t)(-direction * turnSpeed),
+        (int16_t)(direction * turnSpeed));
 
     if (((direction < 0) && (heading <= -CAL_TURN_TARGET_MDEG)) ||
         ((direction > 0) && (heading >= CAL_TURN_TARGET_MDEG))) {
@@ -323,9 +343,31 @@ static void update_turn_settle(void)
 
 static void update_offset(uint8_t blackMask)
 {
+    int32_t leftCount = motion_control_get_left_count();
+    int32_t rightCount = motion_control_get_right_count();
+
     line_speed_control_update_1ms(&gCalibration.lineControl, blackMask);
     line_speed_control_command(&gCalibration.lineControl,
         CAL_OFFSET_SPEED_TICKS);
+
+    if (!gCalibration.offsetZeroCaptured) {
+        if (blackMask == 0U) {
+            if (gCalibration.offsetLineLostMs == 0U) {
+                gCalibration.offsetStartLeftCount = leftCount;
+                gCalibration.offsetStartRightCount = rightCount;
+            }
+            if (gCalibration.offsetLineLostMs <
+                CAL_OFFSET_LINE_LOST_MS) {
+                gCalibration.offsetLineLostMs++;
+            }
+            if (gCalibration.offsetLineLostMs >=
+                CAL_OFFSET_LINE_LOST_MS) {
+                gCalibration.offsetZeroCaptured = true;
+            }
+        } else {
+            gCalibration.offsetLineLostMs = 0U;
+        }
+    }
     if ((gCalibration.stateMs >= CAL_OFFSET_TIMEOUT_MS) ||
         (abs_i32(motion_control_get_average_count()) >=
             chassis_mm_to_counts(CAL_OFFSET_MAX_DISTANCE_MM))) {

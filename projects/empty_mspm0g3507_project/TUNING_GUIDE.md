@@ -16,7 +16,7 @@ and keep the car stationary whenever PA09 starts IMU calibration.
 
 Record these chassis values:
 
-- Nominal counts/revolution: 280 (MG310 P20 provisional value)
+- Nominal counts/revolution: 560 (MG310 P20, A-phase dual-edge count)
 - Wheel diameter: 48 mm
 - Wheel track: TBD mm
 - Sensor-to-chassis-center distance: TBD mm

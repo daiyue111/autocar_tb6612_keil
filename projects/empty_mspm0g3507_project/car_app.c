@@ -593,13 +593,20 @@ static void run_line_follow_step(void)
 
 void car_app_init(void)
 {
+    uint32_t cornerOffsetMm;
+
     gStoredCalibrationValid = calibration_store_load(&gStoredCalibration);
     gCalibrationStoredValid = gStoredCalibrationValid ? 1U : 0U;
     if (gStoredCalibrationValid && USE_STORED_CHASSIS_CALIBRATION) {
         chassis_model_set_counts_per_meter(
             gStoredCalibration.countsPerMeter);
-        chassis_model_set_corner_center_offset_mm(
-            gStoredCalibration.cornerOffsetMm);
+        cornerOffsetMm = gStoredCalibration.cornerOffsetMm;
+        if (cornerOffsetMm > SQUARE_CORNER_OFFSET_TRIM_MM) {
+            cornerOffsetMm -= SQUARE_CORNER_OFFSET_TRIM_MM;
+        } else {
+            cornerOffsetMm = 0U;
+        }
+        chassis_model_set_corner_center_offset_mm(cornerOffsetMm);
     }
     line_follow_reset(&gApp.line, false);
     motor_init();

@@ -76,7 +76,8 @@ void line_speed_control_update_1ms(LineSpeedController *controller,
         controller->filteredErrorX4 = (int16_t)(rawError * 4);
     } else {
         controller->filteredErrorX4 = (int16_t)(
-            (controller->filteredErrorX4 + (rawError * 4)) / 2);
+            ((controller->filteredErrorX4 * 3) +
+                (rawError * 4)) / 4);
     }
     controller->error = (int16_t)(controller->filteredErrorX4 / 4);
     targetCorrection = (int16_t)pid_step_error(&controller->pid,

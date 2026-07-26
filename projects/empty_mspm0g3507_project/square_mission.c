@@ -16,12 +16,13 @@ typedef struct {
     uint16_t cornerClearMs;
     uint16_t cornerDebounceMs;
     uint16_t cornerLostDebounceMs;
-    uint16_t turnLineClearMs;
-    uint16_t turnLineDebounceMs;
+    uint16_t turnCaptureClearMs;
+    uint16_t turnCaptureDebounceMs;
     uint16_t reacquireDebounceMs;
     uint16_t lineLostMs;
     uint16_t settleMs;
     uint8_t imuPeriodMs;
+    uint8_t imuFailCount;
     uint8_t distancePeriodMs;
     int16_t forwardSpeedCommand;
     int16_t turnSpeedCommand;
@@ -32,7 +33,8 @@ typedef struct {
     int32_t headingTargetMdeg;
     int32_t headingErrorMdeg;
     bool cornerArmed;
-    bool turnLineArmed;
+    bool turnBiasCalibrated;
+    bool turnCaptureArmed;
     LineSpeedController lineControl;
     PidController distancePid;
     PidController headingPid;
@@ -78,12 +80,22 @@ static void set_state(SquareMissionState state)
 
 static bool update_heading(void)
 {
+    bool readOk;
+
     gSquare.imuPeriodMs++;
     if (gSquare.imuPeriodMs < IMU_HEADING_PERIOD_MS) {
         return true;
     }
     gSquare.imuPeriodMs = 0U;
-    return imu_heading_update(IMU_HEADING_PERIOD_MS);
+    readOk = imu_heading_update(IMU_HEADING_PERIOD_MS);
+    if (readOk) {
+        gSquare.imuFailCount = 0U;
+        return true;
+    }
+    if (gSquare.imuFailCount < SQUARE_IMU_FAIL_LIMIT) {
+        gSquare.imuFailCount++;
+    }
+    return gSquare.imuFailCount < SQUARE_IMU_FAIL_LIMIT;
 }
 
 static void begin_corner_approach(int32_t startCount)
@@ -101,9 +113,10 @@ static void run_straight(uint8_t blackMask)
 {
     bool cornerPattern = is_corner_pattern(blackMask);
     int32_t averageCount = motion_control_get_average_count();
-    bool cornerDistanceReady = abs_i32(averageCount -
-        gSquare.straightStartCount) >= chassis_mm_to_counts(
-            SQUARE_CORNER_MIN_TRAVEL_MM);
+    bool cornerTravelReady =
+        (abs_i32(averageCount - gSquare.straightStartCount) >=
+            chassis_mm_to_counts(SQUARE_CORNER_MIN_TRAVEL_MM)) ||
+        (gSquare.stateMs >= SQUARE_CORNER_MIN_TRAVEL_MS);
 
     if (blackMask == 0U) {
         if (gSquare.lineLostMs < SQUARE_LINE_LOST_TIMEOUT_MS) {
@@ -128,6 +141,9 @@ static void run_straight(uint8_t blackMask)
         gSquare.forwardSpeedCommand);
 
     if (!gSquare.cornerArmed) {
+        if (gSquare.stateMs >= SQUARE_CORNER_ARM_MS) {
+            gSquare.cornerArmed = true;
+        }
         if (!cornerPattern) {
             if (gSquare.cornerClearMs < SQUARE_CORNER_CLEAR_MS) {
                 gSquare.cornerClearMs++;
@@ -139,7 +155,7 @@ static void run_straight(uint8_t blackMask)
             gSquare.cornerClearMs = 0U;
         }
         gSquare.cornerDebounceMs = 0U;
-    } else if (cornerDistanceReady &&
+    } else if (cornerTravelReady &&
         cornerPattern) {
         if (gSquare.cornerDebounceMs < SQUARE_CORNER_DEBOUNCE_MS) {
             gSquare.cornerDebounceMs++;
@@ -148,7 +164,7 @@ static void run_straight(uint8_t blackMask)
         gSquare.cornerDebounceMs = 0U;
     }
 
-    if (gSquare.cornerArmed && cornerDistanceReady &&
+    if (gSquare.cornerArmed && cornerTravelReady &&
         (blackMask == 0U)) {
         if (gSquare.cornerLostDebounceMs == 0U) {
             gSquare.cornerLostStartCount = averageCount;
@@ -210,6 +226,7 @@ static void run_approach_stop(uint8_t blackMask)
 
     if (gSquare.settleMs >= SQUARE_STOP_SETTLE_MS) {
         motion_control_set_speed_targets(0, 0);
+        gSquare.turnBiasCalibrated = false;
         set_state(SQUARE_STATE_PRE_TURN);
     }
 }
@@ -217,7 +234,20 @@ static void run_approach_stop(uint8_t blackMask)
 static void run_pre_turn(void)
 {
     motion_control_set_speed_targets(0, 0);
-    if (gSquare.stateMs >= SQUARE_PRE_TURN_PAUSE_MS) {
+    if (!gSquare.turnBiasCalibrated && (gSquare.stateMs >= 100U)) {
+        if (!imu_recalibrate_gyro_z_bias()) {
+            if (!imu_init_gyro_z()) {
+                gSquare.faultCode = 8U;
+                motion_control_enable(false);
+                set_state(SQUARE_STATE_FAULT);
+                return;
+            }
+        }
+        gSquare.imuFailCount = 0U;
+        gSquare.turnBiasCalibrated = true;
+    }
+    if (gSquare.turnBiasCalibrated &&
+        (gSquare.stateMs >= SQUARE_PRE_TURN_PAUSE_MS)) {
         imu_heading_reset();
         pid_reset(&gSquare.headingPid);
         gSquare.headingTargetMdeg =
@@ -225,17 +255,22 @@ static void run_pre_turn(void)
         gSquare.headingErrorMdeg = gSquare.headingTargetMdeg;
         gSquare.imuPeriodMs = 0U;
         gSquare.turnSpeedCommand = 0;
-        gSquare.turnLineClearMs = 0U;
-        gSquare.turnLineDebounceMs = 0U;
-        gSquare.turnLineArmed = false;
+        gSquare.turnCaptureClearMs = 0U;
+        gSquare.turnCaptureDebounceMs = 0U;
+        gSquare.turnCaptureArmed = false;
         set_state(SQUARE_STATE_TURN);
     }
 }
 
 static void complete_corner(void)
 {
-    gSquare.cornerCount++;
-    if (gSquare.cornerCount >= SQUARE_TOTAL_CORNERS) {
+    if (gSquare.cornerCount < UINT8_MAX) {
+        gSquare.cornerCount++;
+    } else {
+        gSquare.cornerCount = 0U;
+    }
+    if (!SQUARE_CONTINUOUS_RUN &&
+        (gSquare.cornerCount >= SQUARE_TOTAL_CORNERS)) {
         motion_control_enable(false);
         set_state(SQUARE_STATE_COMPLETE);
     } else {
@@ -256,31 +291,37 @@ static void run_turn(uint8_t blackMask)
 {
     int32_t headingMagnitude = abs_i32(turn_heading_mdeg());
 
-    if (!gSquare.turnLineArmed) {
+    if (!gSquare.turnCaptureArmed) {
         if (blackMask == 0U) {
-            if (gSquare.turnLineClearMs < SQUARE_TURN_LINE_CLEAR_MS) {
-                gSquare.turnLineClearMs++;
+            if (gSquare.turnCaptureClearMs <
+                SQUARE_TURN_CAPTURE_CLEAR_MS) {
+                gSquare.turnCaptureClearMs++;
             }
         } else {
-            gSquare.turnLineClearMs = 0U;
+            gSquare.turnCaptureClearMs = 0U;
         }
-        if (gSquare.turnLineClearMs >= SQUARE_TURN_LINE_CLEAR_MS) {
-            gSquare.turnLineArmed = true;
+        if (gSquare.turnCaptureClearMs >=
+            SQUARE_TURN_CAPTURE_CLEAR_MS) {
+            gSquare.turnCaptureArmed = true;
         }
-    } else if ((headingMagnitude >= SQUARE_TURN_LINE_MIN_ANGLE_MDEG) &&
-        ((blackMask & LINE_CENTER_MASK) != 0U)) {
-        if (gSquare.turnLineDebounceMs <
-            SQUARE_TURN_LINE_DEBOUNCE_MS) {
-            gSquare.turnLineDebounceMs++;
+    } else if ((headingMagnitude >=
+            SQUARE_TURN_CAPTURE_MIN_ANGLE_MDEG) &&
+        (blackMask != 0U)) {
+        if (gSquare.turnCaptureDebounceMs <
+            SQUARE_TURN_CAPTURE_DEBOUNCE_MS) {
+            gSquare.turnCaptureDebounceMs++;
         }
     } else {
-        gSquare.turnLineDebounceMs = 0U;
+        gSquare.turnCaptureDebounceMs = 0U;
     }
 
-    if (gSquare.turnLineDebounceMs >=
-        SQUARE_TURN_LINE_DEBOUNCE_MS) {
+    if (gSquare.turnCaptureDebounceMs >=
+        SQUARE_TURN_CAPTURE_DEBOUNCE_MS) {
+        gSquare.reacquireDebounceMs = 0U;
+        gSquare.turnSpeedCommand = 0;
+        pid_reset(&gSquare.headingPid);
         line_speed_control_reset(&gSquare.lineControl);
-        complete_corner();
+        set_state(SQUARE_STATE_REACQUIRE_LINE);
         return;
     }
 
@@ -292,6 +333,14 @@ static void run_turn(uint8_t blackMask)
         turnSpeed = pid_step_error(&gSquare.headingPid,
             gSquare.headingErrorMdeg);
         turnSpeed = clamp_i32(turnSpeed, SQUARE_TURN_MAX_SPEED_TICKS);
+
+        if ((gSquare.stateMs <= SQUARE_TURN_START_BOOST_MS) &&
+            (abs_i32(gSquare.headingErrorMdeg) >
+                SQUARE_HEADING_TOLERANCE_MDEG)) {
+            turnSpeed = (gSquare.headingErrorMdeg < 0) ?
+                -SQUARE_TURN_START_SPEED_TICKS :
+                SQUARE_TURN_START_SPEED_TICKS;
+        }
 
         if ((abs_i32(gSquare.headingErrorMdeg) >
                 SQUARE_HEADING_TOLERANCE_MDEG) &&
@@ -351,9 +400,16 @@ static void run_reacquire_line(uint8_t blackMask)
     }
 
     if (gSquare.stateMs >= SQUARE_REACQUIRE_TIMEOUT_MS) {
+#if SQUARE_CONTINUOUS_RUN
+        gSquare.stateMs = SQUARE_REACQUIRE_SCAN_DELAY_MS;
+        gSquare.reacquireDebounceMs = 0U;
+        gSquare.turnSpeedCommand = 0;
+        pid_reset(&gSquare.headingPid);
+#else
         gSquare.faultCode = 7U;
         motion_control_enable(false);
         set_state(SQUARE_STATE_FAULT);
+#endif
         return;
     }
 
@@ -393,6 +449,19 @@ static void run_reacquire_line(uint8_t blackMask)
             turnSpeed = (gSquare.headingErrorMdeg < 0) ?
                 -SQUARE_REACQUIRE_MIN_SPEED_TICKS :
                 SQUARE_REACQUIRE_MIN_SPEED_TICKS;
+        }
+        if (gSquare.stateMs >= SQUARE_REACQUIRE_SCAN_DELAY_MS) {
+            uint16_t scanMs = (uint16_t)(gSquare.stateMs -
+                SQUARE_REACQUIRE_SCAN_DELAY_MS);
+
+            if (((scanMs % SQUARE_REACQUIRE_SCAN_HALF_MS) <
+                    SQUARE_REACQUIRE_SCAN_BOOST_MS) &&
+                (abs_i32(gSquare.headingErrorMdeg) >
+                    SQUARE_HEADING_TOLERANCE_MDEG)) {
+                turnSpeed = (gSquare.headingErrorMdeg < 0) ?
+                    -SQUARE_REACQUIRE_SCAN_BOOST_SPEED_TICKS :
+                    SQUARE_REACQUIRE_SCAN_BOOST_SPEED_TICKS;
+            }
         }
         gSquare.turnSpeedCommand = (int16_t)turnSpeed;
     }
@@ -435,11 +504,12 @@ bool square_mission_start(bool imuReady)
     gSquare.cornerClearMs = 0U;
     gSquare.cornerDebounceMs = 0U;
     gSquare.cornerLostDebounceMs = 0U;
-    gSquare.turnLineClearMs = 0U;
-    gSquare.turnLineDebounceMs = 0U;
+    gSquare.turnCaptureClearMs = 0U;
+    gSquare.turnCaptureDebounceMs = 0U;
     gSquare.reacquireDebounceMs = 0U;
     gSquare.lineLostMs = 0U;
     gSquare.imuPeriodMs = 0U;
+    gSquare.imuFailCount = 0U;
     gSquare.distancePeriodMs = 0U;
     gSquare.forwardSpeedCommand = SQUARE_CRUISE_SPEED_TICKS;
     gSquare.turnSpeedCommand = 0;
@@ -448,7 +518,8 @@ bool square_mission_start(bool imuReady)
     gSquare.straightStartCount = motion_control_get_average_count();
     gSquare.cornerLostStartCount = gSquare.straightStartCount;
     gSquare.cornerArmed = false;
-    gSquare.turnLineArmed = false;
+    gSquare.turnBiasCalibrated = false;
+    gSquare.turnCaptureArmed = false;
     set_state(SQUARE_STATE_STRAIGHT);
     return true;
 }
