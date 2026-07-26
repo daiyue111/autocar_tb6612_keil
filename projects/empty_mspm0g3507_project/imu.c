@@ -28,8 +28,9 @@
 #define IMU_BIAS_SETTLE_MS 220U
 #define IMU_BIAS_SAMPLES 32U
 #define IMU_BIAS_SAMPLE_MS 4U
-#define IMU_TURN_BIAS_SAMPLES 32U
+#define IMU_TURN_BIAS_SAMPLES 64U
 #define IMU_TURN_BIAS_SAMPLE_MS 2U
+#define IMU_GYRO_VALID_ABS_MAX 12000
 
 static int32_t gGyroZBias;
 static bool gGyroReady;
@@ -301,6 +302,10 @@ bool imu_heading_update(uint32_t sampleMs)
     int32_t delta;
 
     if (!imu_read_gyro_z_delta(&delta)) {
+        return false;
+    }
+    if ((delta > IMU_GYRO_VALID_ABS_MAX) ||
+        (delta < -IMU_GYRO_VALID_ABS_MAX)) {
         return false;
     }
 

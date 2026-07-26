@@ -335,6 +335,7 @@ static void run_turn(uint8_t blackMask)
         turnSpeed = clamp_i32(turnSpeed, SQUARE_TURN_MAX_SPEED_TICKS);
 
         if ((gSquare.stateMs <= SQUARE_TURN_START_BOOST_MS) &&
+            (headingMagnitude < SQUARE_TURN_START_MAX_ANGLE_MDEG) &&
             (abs_i32(gSquare.headingErrorMdeg) >
                 SQUARE_HEADING_TOLERANCE_MDEG)) {
             turnSpeed = (gSquare.headingErrorMdeg < 0) ?
@@ -457,7 +458,7 @@ static void run_reacquire_line(uint8_t blackMask)
             if (((scanMs % SQUARE_REACQUIRE_SCAN_HALF_MS) <
                     SQUARE_REACQUIRE_SCAN_BOOST_MS) &&
                 (abs_i32(gSquare.headingErrorMdeg) >
-                    SQUARE_HEADING_TOLERANCE_MDEG)) {
+                    SQUARE_REACQUIRE_BOOST_RELEASE_MDEG)) {
                 turnSpeed = (gSquare.headingErrorMdeg < 0) ?
                     -SQUARE_REACQUIRE_SCAN_BOOST_SPEED_TICKS :
                     SQUARE_REACQUIRE_SCAN_BOOST_SPEED_TICKS;
