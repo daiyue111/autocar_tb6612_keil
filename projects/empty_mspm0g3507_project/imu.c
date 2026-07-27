@@ -1,7 +1,5 @@
 #include "imu.h"
 
-#include "app_config.h"
-
 #include <stddef.h>
 
 #define IMU_SPI SPI1
@@ -28,9 +26,6 @@
 #define IMU_BIAS_SETTLE_MS 220U
 #define IMU_BIAS_SAMPLES 32U
 #define IMU_BIAS_SAMPLE_MS 4U
-#define IMU_TURN_BIAS_SAMPLES 64U
-#define IMU_TURN_BIAS_SAMPLE_MS 2U
-#define IMU_GYRO_VALID_ABS_MAX 12000
 
 static int32_t gGyroZBias;
 static bool gGyroReady;
@@ -246,33 +241,6 @@ bool imu_init_gyro_z(void)
     return true;
 }
 
-bool imu_recalibrate_gyro_z_bias(void)
-{
-    int32_t sum = 0;
-    uint8_t count = 0U;
-
-    if (!gGyroReady) {
-        return false;
-    }
-    for (uint8_t i = 0U; i < IMU_TURN_BIAS_SAMPLES; i++) {
-        int16_t gz = 0;
-
-        if (imu_spi_read_i16(IMU_GYRO_DATA_Z1, &gz)) {
-            sum += gz;
-            count++;
-        }
-        imu_delay_ms(IMU_TURN_BIAS_SAMPLE_MS);
-    }
-    if (count == 0U) {
-        gImuError = 6U;
-        return false;
-    }
-
-    gGyroZBias = sum / (int32_t)count;
-    imu_heading_reset();
-    return true;
-}
-
 bool imu_read_gyro_z_delta(int32_t *delta)
 {
     int16_t gz = 0;
@@ -304,16 +272,11 @@ bool imu_heading_update(uint32_t sampleMs)
     if (!imu_read_gyro_z_delta(&delta)) {
         return false;
     }
-    if ((delta > IMU_GYRO_VALID_ABS_MAX) ||
-        (delta < -IMU_GYRO_VALID_ABS_MAX)) {
-        return false;
-    }
 
     gLastGyroDelta = delta;
     if ((delta > 8) || (delta < -8)) {
         /* GYRO_CONFIG0=0x06 selects 2000 dps, 16.4 LSB/(deg/s). */
-        gHeadingMdeg += (IMU_HEADING_SIGN * delta *
-            (int32_t)sampleMs * 10) / 164;
+        gHeadingMdeg += (delta * (int32_t)sampleMs * 10) / 164;
     }
     return true;
 }

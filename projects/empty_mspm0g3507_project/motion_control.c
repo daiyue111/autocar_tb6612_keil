@@ -8,8 +8,6 @@
 typedef struct {
     bool enabled;
     uint8_t periodMs;
-    int16_t leftRequest;
-    int16_t rightRequest;
     int16_t leftTarget;
     int16_t rightTarget;
     int16_t leftSpeed;
@@ -43,21 +41,6 @@ static int32_t clamp_i32(int32_t value, int32_t limit)
 static int32_t abs_i32(int32_t value)
 {
     return (value < 0) ? -value : value;
-}
-
-static int16_t slew_target(int16_t current, int16_t requested)
-{
-    if (requested > current) {
-        int16_t next = (int16_t)(current + SPEED_TARGET_SLEW_TICKS);
-
-        return (next > requested) ? requested : next;
-    }
-    if (requested < current) {
-        int16_t next = (int16_t)(current - SPEED_TARGET_SLEW_TICKS);
-
-        return (next < requested) ? requested : next;
-    }
-    return current;
 }
 
 static void update_fault_timer(bool condition, uint16_t *timerMs)
@@ -132,8 +115,6 @@ void motion_control_enable(bool enable)
 {
     gMotion.enabled = enable;
     if (!enable) {
-        gMotion.leftRequest = 0;
-        gMotion.rightRequest = 0;
         gMotion.leftTarget = 0;
         gMotion.rightTarget = 0;
         gMotion.leftPwm = 0;
@@ -152,8 +133,6 @@ void motion_control_reset(void)
     counts = encoder_get_counts();
     gMotion.enabled = false;
     gMotion.periodMs = 0U;
-    gMotion.leftRequest = 0;
-    gMotion.rightRequest = 0;
     gMotion.leftTarget = 0;
     gMotion.rightTarget = 0;
     gMotion.leftSpeed = 0;
@@ -174,9 +153,9 @@ void motion_control_reset(void)
 
 void motion_control_set_speed_targets(int16_t left, int16_t right)
 {
-    gMotion.leftRequest = (int16_t)clamp_i32(left,
+    gMotion.leftTarget = (int16_t)clamp_i32(left,
         WHEEL_SPEED_TARGET_LIMIT);
-    gMotion.rightRequest = (int16_t)clamp_i32(right,
+    gMotion.rightTarget = (int16_t)clamp_i32(right,
         WHEEL_SPEED_TARGET_LIMIT);
 }
 
@@ -195,11 +174,6 @@ void motion_control_update_1ms(void)
         return;
     }
     gMotion.periodMs = 0U;
-
-    gMotion.leftTarget = slew_target(gMotion.leftTarget,
-        gMotion.leftRequest);
-    gMotion.rightTarget = slew_target(gMotion.rightTarget,
-        gMotion.rightRequest);
 
     counts = encoder_get_counts();
     gMotion.leftSpeed = (int16_t)(counts.left - gMotion.previousLeftCount);
